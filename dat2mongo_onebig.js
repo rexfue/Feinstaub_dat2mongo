@@ -11,6 +11,8 @@
     - 24h-gleitenden Mittelwert laufend mitrechnen
     - diesen immer um 0h00 (UTC !!!!) extra als Tagesmittewert abspeichern und in
       eine eigen collection eintragen
+
+      Adaptieren an ECMA6 !!
  */
 
 /* Aufbau der DBase:
@@ -261,9 +263,9 @@ async function doTheEntry(entries) {
 //    const collections = await dBase.listCollections().toArray();
     for (let i=0; i< entries.length; i++) {
         let entry = entries[i];
-        if(entry.sid == 140) {
-            console.log("140 gefunden");
-        }
+//        if(entry.sid == 140) {
+//            console.log("140 gefunden");
+//        }
         let sid = entry.sid;
         var coll = dBase.collection('allsids');
         let doc = await coll.findOne({sid: sid},{_id:0, sid:1, 'values.datetime':1});
