@@ -80,7 +80,7 @@
          ]
  */
 
-const LIVE=true;
+const LIVE=false;
 
 
 const request = require('request');
@@ -175,58 +175,65 @@ function readDatafromFile() {
 
 
 function constructDBaseEntries(body) {
-	console.log("Dauer bis Aufruf zum Parsen: ",moment()-start)
-	let allValues = [] ;
-	let allKorrel = [] ;
-	let st1 = moment();
-	for (let i=0; i<body.length; i++) {                         // check all entries
-		let entry = {};
-		let val = [];                                           // is sid alredy in array
-        let idx = allValues.findIndex( function(obj) { return obj.sid === body[i].sensor.id; });
-		if (idx != -1) {                                        // yes
+    console.log("Dauer bis Aufruf zum Parsen: ", moment() - start)
+    let allValues = [];
+    let allKorrel = [];
+    let st1 = moment();
+    for (let i = 0; i < body.length; i++) {                         // check all entries
+        let entry = {};
+        let val = [];                                           // is sid alredy in array
+        let idx = allValues.findIndex(function (obj) {
+            return obj.sid === body[i].sensor.id;
+        });
+        if (idx != -1) {                                        // yes
             val = allValues[idx].values;                        // so read current values
-		} else {                                                // no
-            allValues.push({'sid':body[i].sensor.id, 'values':val});  // so push  sid and empty values
-            idx = allValues.length-1;                           // adjust index
+        } else {                                                // no
+            allValues.push({'sid': body[i].sensor.id, 'values': val});  // so push  sid and empty values
+            idx = allValues.length - 1;                         // adjust index
+            allValues[idx].othersensors = [];                   // init array for the other sensors on same location
+        }
+        let date = moment.utc(body[i].timestamp);               // extract date of entry
+        entry.datetime = date.toDate();					        // make date for Mongo (== ISODate)
+        let values = body[i].sensordatavalues;                  // fetch values
+        for (let n = 0; n < values.length; n++) {                  // for all values
+            let typ = values[n].value_type;                     // extract type
+            let x = 0.0;                                        // bdefault for value
+            try {
+                x = parseFloat(values[n].value);                // extract value
+            } catch (err) {
+                console.log(err);
             }
-		}
-		let date = moment.utc(body[i].timestamp);               // extract date of entry
-		entry.datetime = date.toDate();					        // make date for Mongo (== ISODate)
-		let values = body[i].sensordatavalues;                  // fetch values
-		for (let n=0; n< values.length; n++) {                  // for all values
-			let typ = values[n].value_type;                     // extract type
-			let x = 0.0;                                        // bdefault for value
-			try {
-				x = parseFloat(values[n].value);                // extract value
-			} catch (err) {
-				console.log(err);
-			}
-			entry[typ] = x;                                     // put typ and value into new entry
-		}
-		let x=true;                                             // set flag
-		for(let n=0; n<val.length; n++) {                       // for all values in this entry
-			if(date.isSame(val[n].datetime)) {                  // if the same date is aready entered
-				delete entry.datetime;                          // delete it
-				for (var k in entry) {                          // and enter the typ and value
-					val[n][k] = entry[k];
-				};
-				x=false;                                        // clear flag
-				break;
-			}
-		}
-		if(x==true) {                                           // if flag set (after loop)
-			val.push(entry);                                    // push te entry, else is is already entered
+            entry[typ] = x;                                     // put typ and value into new entry
         }
-		allValues[idx].values = val;                            // now push alll into the big array
+        let x = true;                                             // set flag
+        for (let n = 0; n < val.length; n++) {                       // for all values in this entry
+            if (date.isSame(val[n].datetime)) {                  // if the same date is aready entered
+                delete entry.datetime;                          // delete it
+                for (var k in entry) {                          // and enter the typ and value
+                    val[n][k] = entry[k];
+                }
+                ;
+                x = false;                                        // clear flag
+                break;
+            }
+        }
+        if (x == true) {                                           // if flag set (after loop)
+            val.push(entry);                                    // push te entry, else is is already entered
+        }
+        allValues[idx].values = val;                            // now push alll into the big array
+        allValues[idx].type = {name: body[i].sensor.sensor_type.name, date_since: moment().toDate()}; // and sensortype
         allValues[idx].location = body[i].location;             // and add the location
-        allValues[idx].type = { name: body[i].sensor.sensor_type.name, date_since : moment().toDate()}; // and sensortype
-        let fnd = allValues.findIndex( function(obj) { return obj.location.id === body[i].location.id; });
-        if (fnd != -1) {                                        // same location -> korrelate
-            allValues[idx].othersensors.push(body[i].sensor.id);
+        let fnd = allValues.findIndex(function (obj) {
+            return obj.location.id === body[i].location.id;
+        });
+        if ((fnd != -1) && (fnd != idx)) {                      // same location -> korrelate (skip own sid)
+            if((allValues[fnd].othersensors).indexOf(body[i].sensor.id) == -1) {  // if not already stored
+                allValues[fnd].othersensors.push(body[i].sensor.id);  // enter sid
+            }
         }
-
     }
-    allcount = allValues.length;                                // so many elents were added
+    allcount = allValues.length;                                // so many elents were adde9d
+
 //	console.log(allValues);
 	let los = moment();
 	console.log("Parsen dauert:", los-st1);
@@ -264,52 +271,48 @@ if (!collections.map(c => c.s.name).includes(collName)) {
 
  */
 
-
+// Put all data into the database
 async function doTheEntry(entries) {
-//    const collections = await dBase.listCollections().toArray();
-    for (let i=0; i< entries.length; i++) {
-        let entry = entries[i];
-//        if(entry.sid == 140) {
-//            console.log("140 gefunden");
-//        }
-        let sid = entry.sid;
-        var coll = dBase.collection('allsids');
-        let doc = await coll.findOne({sid: sid},{_id:0, sid:1, 'values.datetime':1});
-        if (doc == null) {
-            console.log("New Sensor:",sid);
-            // hier dann Adresse und Höhe von Google holen und mit abspeichern
-            let inserted = await coll.insert(entry);
-            icount += inserted.insertedCount;
-            let x = await coll.ensureIndex({sid: 1});
-//            console.log('Index_sid: ', x);
+    for (let i=0; i< entries.length; i++) {                     // loop for every entry
+        let entry = entries[i];                                 // save typing !
+        let sid = entry.sid;                                    // sid of current entry
+        var coll = dBase.collection('allsids');                 // this collection is used
+        let doc = await coll.findOne({sid: sid},{_id:0, sid:1, 'values.datetime':1});   // try to fetch document with ..
+        // <================ Hier max. eine Tag zurück ab jetzt einlesen, darüber dann den Mittelwert bilden -> 24h average
+        if (doc == null) {                                      // ..current sid
+            console.log("New Sensor:",sid);                     // not found => log it
+            // <==================== hier dann Adresse und Höhe von Google holen und mit abspeichern
+            let inserted = await coll.insert(entry);            // so insert the whole entry as is
+            icount += inserted.insertedCount;                   // count inserted records
+            let x = await coll.ensureIndex({sid: 1});           // and create the indexes
             x = await coll.ensureIndex({'values.datetime':1});
-//            console.log('Index_datetime: ', x);
-        } else {
-            let dv_values = doc.values.slice(-5)
-            for (let n=0; n<entry.values.length; n++) {
-                let ed = entry.values[n].datetime.getTime();
-                let doit = true;
-                for (let k=0; k<dv_values.length; k++) {
-                    let dvd = dv_values[k].datetime.getTime();
-                    if(dvd == ed) {
-                        doit = false;
+        } else {                                                // sid is found in dbase
+            let dv_values = doc.values.slice(-5)                // extract the last newest 5 value records
+            for (let n=0; n<entry.values.length; n++) {         // loop over all new value-dates
+                let ed = entry.values[n].datetime.getTime();    // make timestamp
+                for (let k=0; k<dv_values.length; k++) {        // loop over the last (max) 5 values from the DB
+                    let dvd = dv_values[k].datetime.getTime();  // make timestamp
+                    if(dvd == ed) {                             // compare
+                        entry.values.splice(n,1);               // if equal, delete in entry
+                        n=-1;
                         break;
                     }
                 }
-                if (doit) {
-                    let updated = await coll.update({sid: entry.sid},{ $push: {values: entry.values[n]}})
-                    ucount += 1;
- //               } else {
- //                   console.log(entry.sid, 'doppeltes Datum');
-                }
+            }
+            if(entry.values.length > 0) {
+                let updated = await
+                coll.update({sid: entry.sid}, {$push: {values: { $each: entry.values}}})  // store it ..
+                ucount += 1;                                // .. -> update the record; count updated
             }
         }
+        // <======  Checklen, ob der Tag um ist. Wenn ja, den letzten Mittelwert als Tages-Mittel
+        // speichern (bezogen auf UTC!)
     }
 }
 
 // Umrechnen der msec in minuten und Sekunden und als String zurückgeben
 function minsec(msec) {
-    min = (msec/60000).toFixed(0);
+    min = Math.floor((msec/60000));
     msec -= min*60000;
     sec = (msec/1000).toFixed(2);
     return(min+':'+sec+ ' min:sec');
