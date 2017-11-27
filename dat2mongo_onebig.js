@@ -179,48 +179,54 @@ function constructDBaseEntries(body) {
 	let allValues = [] ;
 	let allKorrel = [] ;
 	let st1 = moment();
-	for (let i=0; i<body.length; i++) {
+	for (let i=0; i<body.length; i++) {                         // check all entries
 		let entry = {};
-		let val = [];
+		let val = [];                                           // is sid alredy in array
         let idx = allValues.findIndex( function(obj) { return obj.sid === body[i].sensor.id; });
-		if (idx != -1) {
-            val = allValues[idx].values;
-		} else {
-            allValues.push({'sid':body[i].sensor.id, 'values':val});
-            idx = allValues.length-1;
+		if (idx != -1) {                                        // yes
+            val = allValues[idx].values;                        // so read current values
+		} else {                                                // no
+            allValues.push({'sid':body[i].sensor.id, 'values':val});  // so push  sid and empty values
+            idx = allValues.length-1;                           // adjust index
+            }
 		}
-		let date = moment.utc(body[i].timestamp);
-		entry.datetime = date.toDate();					// make date for Mongo (== ISODate)
-		let values = body[i].sensordatavalues;
-		for (let n=0; n< values.length; n++) {
-			let typ = values[n].value_type;
-			let x = 0.0;
+		let date = moment.utc(body[i].timestamp);               // extract date of entry
+		entry.datetime = date.toDate();					        // make date for Mongo (== ISODate)
+		let values = body[i].sensordatavalues;                  // fetch values
+		for (let n=0; n< values.length; n++) {                  // for all values
+			let typ = values[n].value_type;                     // extract type
+			let x = 0.0;                                        // bdefault for value
 			try {
-				x = parseFloat(values[n].value);
+				x = parseFloat(values[n].value);                // extract value
 			} catch (err) {
 				console.log(err);
 			}
-			entry[typ] = x;
+			entry[typ] = x;                                     // put typ and value into new entry
 		}
-		let x=true;
-		for(let n=0; n<val.length; n++) {
-			if(date.isSame(val[n].datetime)) {
-				delete entry.datetime;
-				for (var k in entry) {
+		let x=true;                                             // set flag
+		for(let n=0; n<val.length; n++) {                       // for all values in this entry
+			if(date.isSame(val[n].datetime)) {                  // if the same date is aready entered
+				delete entry.datetime;                          // delete it
+				for (var k in entry) {                          // and enter the typ and value
 					val[n][k] = entry[k];
 				};
-				x=false;
+				x=false;                                        // clear flag
 				break;
 			}
 		}
-		if(x==true) {
-			val.push(entry);
+		if(x==true) {                                           // if flag set (after loop)
+			val.push(entry);                                    // push te entry, else is is already entered
         }
-		allValues[idx].values = val;
-        allValues[idx].location = body[i].location;
-        allValues[idx].type = { name: body[i].sensor.sensor_type.name, date_since : moment().toDate()};
+		allValues[idx].values = val;                            // now push alll into the big array
+        allValues[idx].location = body[i].location;             // and add the location
+        allValues[idx].type = { name: body[i].sensor.sensor_type.name, date_since : moment().toDate()}; // and sensortype
+        let fnd = allValues.findIndex( function(obj) { return obj.location.id === body[i].location.id; });
+        if (fnd != -1) {                                        // same location -> korrelate
+            allValues[idx].othersensors.push(body[i].sensor.id);
+        }
+
     }
-    allcount = allValues.length;
+    allcount = allValues.length;                                // so many elents were added
 //	console.log(allValues);
 	let los = moment();
 	console.log("Parsen dauert:", los-st1);
