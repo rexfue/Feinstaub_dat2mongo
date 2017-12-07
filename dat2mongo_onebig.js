@@ -50,7 +50,7 @@
     values:
         [
             {
-                datetime: 271-11-03T12:34:00Z,
+                datetime: 2071-11-03T12:34:00Z,
                 p1: 12.56,
                 p2: 34.67,
                 p1mva24: 10.67,
@@ -80,7 +80,7 @@
          ]
  */
 
-const LIVE=false;
+const LIVE=true;
 
 
 const request = require('request');
@@ -273,10 +273,10 @@ if (!collections.map(c => c.s.name).includes(collName)) {
 
 // Put all data into the database
 async function doTheEntry(entries) {
+    let coll = dBase.collection('allsids');                     // this collection is used
     for (let i=0; i< entries.length; i++) {                     // loop for every entry
         let entry = entries[i];                                 // save typing !
         let sid = entry.sid;                                    // sid of current entry
-        var coll = dBase.collection('allsids');                 // this collection is used
         let doc = await coll.findOne({sid: sid},{_id:0, sid:1, 'values.datetime':1});   // try to fetch document with ..
         // <================ Hier max. eine Tag zurück ab jetzt einlesen, darüber dann den Mittelwert bilden -> 24h average
         if (doc == null) {                                      // ..current sid
