@@ -12,15 +12,24 @@
     - diesen immer um 0h00 (UTC !!!!) extra als Tagesmittewert abspeichern und in
       eine eigen collection eintragen
  */
+
+// Aufbau der verschiednen Ciollections sie im doc-Verzeichnis
+
 const LIVE=true;
 
+const MAXENTRYBATCH = 500;
 
 const request = require('request');
 const moment = require('moment');
 const MongoClient = require('mongodb').MongoClient;
 const fs = require('fs');
 
-const MONGO_URL = 'mongodb://localhost'+':'+27018+'/Feinstaub';  	// URL to mongo database
+let MONGOHOST = process.env.MONGOHOST;
+let MONGOPORT = process.env.MONGOPORT;
+if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
+if (MONGOPORT == undefined) { MONGOPORT =  27017; }
+
+const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaub';  	// URL to mongo database
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data24h.json';	// URL to API on 'luftdaten.info'
 const SAVE_NAME = 'data/aktdata.json';								// filename for actual data
@@ -102,50 +111,67 @@ function readDatafromFile() {
 
 
 function constructDBaseEntries(body) {
-	console.log("Dauer bis Aufruf zum Parsen: ",moment()-start)
-	let allValues = [] ;
-	let allKorrel = [] ;
-	let st1 = moment();
-	for (let i=0; i<body.length; i++) {
-		let entry = {};
-		let val = [];
-        let idx = allValues.findIndex( function(obj) { return obj.sid === body[i].sensor.id; });
-		if (idx != -1) {
-            val = allValues[idx].values;
-		} else {
-            allValues.push({'sid':body[i].sensor.id, 'values':val});
-            idx = allValues.length-1;
-		}
-		let date = moment.utc(body[i].timestamp);
-		entry.date = date.toDate();					// make date for Mongo (== ISODate)
-		let values = body[i].sensordatavalues;
-		for (let n=0; n< values.length; n++) {
-			let typ = values[n].value_type;
-			let x = 0.0;
-			try {
-				x = parseFloat(values[n].value);
-			} catch (err) {
-				console.log(err);
-			}
-			entry[typ] = x;
-		}
-		let x=true;
-		for(let n=0; n<val.length; n++) {
-			if(date.isSame(val[n].date)) {
-				delete entry.date;
-				for (var k in entry) {
-					val[n][k] = entry[k];
-				};
-				x=false;
-				break;
-			}
-		}
-		if(x==true) {
-			val.push(entry);
+    console.log("Dauer bis Aufruf zum Parsen: ", moment() - start)
+    let allValues = [];
+    let allKorrel = [];
+    let st1 = moment();
+    for (let i = 0; i < body.length; i++) {                     // check all entries
+        let entry = {};
+        let val = [];                                           // is sid alredy in array
+        let idx = allValues.findIndex(function (obj) {
+            return obj.sid === body[i].sensor.id;
+        });
+        if (idx != -1) {                                        // yes
+            val = allValues[idx].values;                        // so read current values
+        } else {                                                // no
+            allValues.push({'sid': body[i].sensor.id, 'values': val});  // so push  sid and empty values
+            idx = allValues.length - 1;                         // adjust index
+            allValues[idx].othersensors = [];                   // init array for the other sensors on same location
         }
-		allValues[idx].values = val;
-	}
-    allcount = allValues.length;
+        let date = moment.utc(body[i].timestamp);               // extract date of entry
+        entry.datetime = date.toDate();					        // make date for Mongo (== ISODate)
+        let values = body[i].sensordatavalues;                  // fetch values
+        for (let n = 0; n < values.length; n++) {               // for all values
+            let typ = values[n].value_type;                     // extract type
+            let x = 0.0;                                        // bdefault for value
+            try {
+                x = parseFloat(values[n].value);                // extract value
+            } catch (err) {
+                console.log(err);
+            }
+            entry[typ] = x;                                     // put typ and value into new entry
+        }
+        let x = true;                                           // set flag
+        for (let n = 0; n < val.length; n++) {                  // for all values in this entry
+            if (date.isSame(val[n].datetime)) {                 // if the same date is aready entered
+                delete entry.datetime;                          // delete it
+                for (var k in entry) {                          // and enter the typ and value
+                    val[n][k] = entry[k];
+                }
+                ;
+                x = false;                                      // clear flag
+                break;
+            }
+        }
+        if (x == true) {                                        // if flag set (after loop)
+            val.push(entry);                                    // push te entry, else it is already entered
+        }
+        allValues[idx].values = val;                            // now push all into the big array
+        allValues[idx].properties = {name: body[i].sensor.sensor_type.name,  // add properties:
+            date_since: '1900-01-01',                           // name ..
+            location: body[i].location                          // and locatuin
+            };
+        let fnd = allValues.findIndex(function (obj) {
+            return obj.properties.location.id === body[i].location.id;
+        });
+        if ((fnd != -1) && (fnd != idx)) {                      // same location -> korrelate (skip own sid)
+            if((allValues[fnd].othersensors).indexOf(body[i].sensor.id) == -1) {  // if not already stored
+                allValues[fnd].othersensors.push(body[i].sensor.id);  // enter sid
+            }
+        }
+    }
+    allcount = allValues.length;                                // so many elents were adde9d
+
 //	console.log(allValues);
 	let los = moment();
 	console.log("Parsen dauert:", los-st1);
@@ -153,58 +179,58 @@ function constructDBaseEntries(body) {
     doTheEntry(allValues).then(() => {
         dBase.close();
         let gz =  moment()-los;
-        console.log("Schreiben in dBase: ",  gz ,'msec  ', (gz/60000).toFixed(2),'min');
+        console.log("Schreiben in dBase: ",  gz ,'msec  ', minsec(gz));
         gz = moment()-start;
-        console.log("Gesamtzeit: ", gz ,'msec  ', (gz/60000).toFixed(2),'min');
-        console.log("icount=",icount,"  dcount=",dcount, "  allcount:",allcount);
+        console.log("Gesamtzeit: ", gz ,'msec  ', minsec(gz));
+        console.log("icount=",icount,"  dcount=",dcount,"  allcount:",allcount);
         console.log("All thru")});
-/*	dBase.collection("fst").findOne({date: allValues[0].date}, function(err,result) {
-		if(err) throw err;
-		if (result === null) {
-			dBase.collection("fst").insertMany(allValues, function(err,res) {
-			    if (err) throw err;
-			    console.log("Number of documents inserted: " + res.insertedCount);
-			    dBase.close();
-			    console.log("DBase.Insert dauert: ", moment()-los);
-			    });
-		} else {
-			console.log("Data already in dbase");
-		}
-	});
-*/
 }
 
-/*
-
-const collections = await db.collections();
-if (!collections.map(c => c.s.name).includes(collName)) {
-    await db.createCollection(collName);
-}
-
- */
 
 async function doTheEntry(entries) {
-    const collections = await dBase.listCollections().toArray();
-    for (let i=0; i< entries.length; i++) {
-        let cname = 'data_'+ entries[i].sid;
-        if (!collections.map(c => c.name).includes(cname)) {
-            console.log("New Collection:",cname);
+    const collections = await dBase.listCollections().toArray();    // read all collection names
+    let counter = 0;                                            // counter for MAXENTRYBATCH
+    let inserted = 0;                                           // count number of inserted records
+    for (let i=0; i< entries.length; i++) {                     // loop through all entries
+        let cname = entries[i].sid + '_current';                // build collection name
+        var coll = dBase.collection(cname);                     // use this collection
+        if (!collections.map(c => c.name).includes(cname)) {    // does it already exist?
+            counter++;
+            console.log(counter, "New Collection:",cname);      // no, log it
+            if (counter == MAXENTRYBATCH) {                     // if MAXENTRYBATCH non existant are done
+                return;                                         // finish
+            }
+            inserted = await coll.insertOne(entries[i].properties);  // otherwise save properties
+            await coll.createIndex({ datetime:1});
             // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  hier dann die collection createn UND den Eintrag in der
-            // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  korrelation-Table machen und dann RETURN ! D.h. die aktuellen
+            // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  korrelation-Table machen und dann RETURN ! D.h. die aktuellen Werte
             // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  nicht mit eintragen
-        }
-        var coll = dBase.collection(cname);
-        let doc = await coll.findOne({date:entries[i].values[0].date});
-        if(doc == null) {
-            let inserted = await coll.insertMany(entries[i].values);
-            icount += inserted.insertedCount;
-//            console.log("Inserted:", inserted.insertedCount);
-        } else {
-//            console.log("schon drin");
-            dcount += entries[i].values.length;
+        } else {                                                // collection exists
+            let doc = await coll.findOne({datetime: entries[i].values[0].datetime});
+            if(doc == null) {
+                inserted = await
+                coll.insertMany(entries[i].values);  // so save new values
+                icount += inserted.insertedCount;
+            } else {
+                dcount+=entries[i].values.length;
+            }
         }
     }
 }
+
+// Vorne 0 hinschreiben, wenn n < 10 ist
+function nullfill(n) {
+    return (n < 10) ? ('0' + n) : n;
+}
+
+// Umrechnen der msec in minuten und Sekunden und als String zurückgeben
+function minsec(msec) {
+    let min = Math.floor((msec/60000));
+    msec -= min*60000;
+    let sec = (msec/1000).toFixed(2);
+    return nullfill(min) + ':' + nullfill(sec) + ' min:sec';
+}
+
 /*
 //https://zeit.co/blog/async-and-await
 function sleep (time) {
