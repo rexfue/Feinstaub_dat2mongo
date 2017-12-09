@@ -17,7 +17,7 @@
 
 const LIVE=true;
 
-const MAXENTRYBATCH = 500;
+const MAXENTRYBATCH = 50000;
 
 const request = require('request');
 const moment = require('moment');
