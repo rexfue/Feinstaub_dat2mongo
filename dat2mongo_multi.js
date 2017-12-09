@@ -122,11 +122,12 @@ function constructDBaseEntries(body) {
             return obj.sid === body[i].sensor.id;
         });
         if (idx != -1) {                                        // yes
-            val = allValues[idx].values;                        // so read current values
+            val = allValues[idx].values;                        // -> read current values
         } else {                                                // no
-            allValues.push({'sid': body[i].sensor.id, 'values': val});  // so push  sid and empty values
+            allValues.push({'sid': body[i].sensor.id, 'values': val});  // -> push  sid and empty values
             idx = allValues.length - 1;                         // adjust index
-            allValues[idx].othersensors = [];                   // init array for the other sensors on same location
+            allValues[idx].properties = {};
+            allValues[idx].properties.othersensors = [];        // init array for the other sensors on same location
         }
         let date = moment.utc(body[i].timestamp);               // extract date of entry
         entry.datetime = date.toDate();					        // make date for Mongo (== ISODate)
@@ -157,16 +158,15 @@ function constructDBaseEntries(body) {
             val.push(entry);                                    // push te entry, else it is already entered
         }
         allValues[idx].values = val;                            // now push all into the big array
-        allValues[idx].properties = {name: body[i].sensor.sensor_type.name,  // add properties:
-            date_since: '1900-01-01',                           // name ..
-            location: body[i].location                          // and locatuin
-            };
+        allValues[idx].properties.name = body[i].sensor.sensor_type.name;  // add properties:
+        allValues[idx].properties.date_since =  '1900-01-01';                           // name ..
+        allValues[idx].properties.location =  body[i].location;                          // and locatuin
         let fnd = allValues.findIndex(function (obj) {
             return obj.properties.location.id === body[i].location.id;
         });
         if ((fnd != -1) && (fnd != idx)) {                      // same location -> korrelate (skip own sid)
-            if((allValues[fnd].othersensors).indexOf(body[i].sensor.id) == -1) {  // if not already stored
-                allValues[fnd].othersensors.push(body[i].sensor.id);  // enter sid
+            if((allValues[fnd].properties.othersensors).indexOf(body[i].sensor.id) == -1) {  // if not already stored
+                allValues[fnd].properties.othersensors.push(body[i].sensor.id);  // enter sid
             }
         }
     }
@@ -200,8 +200,8 @@ async function doTheEntry(entries) {
             if (counter == MAXENTRYBATCH) {                     // if MAXENTRYBATCH non existant are done
                 return;                                         // finish
             }
-            inserted = await coll.insertOne(entries[i].properties);  // otherwise save properties
-            await coll.createIndex({ datetime:1});
+            inserted = await coll.insertOne({ properties: entries[i].properties});  // otherwise save properties
+            await coll.createIndex({ datetime:1}, { expireAfterSeconds: 2764800});  // expire after 32 days
             // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  hier dann die collection createn UND den Eintrag in der
             // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  korrelation-Table machen und dann RETURN ! D.h. die aktuellen Werte
             // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  nicht mit eintragen
