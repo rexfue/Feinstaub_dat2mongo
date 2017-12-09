@@ -157,6 +157,7 @@ function constructDBaseEntries(body) {
         if (x == true) {                                        // if flag set (after loop)
             val.push(entry);                                    // push te entry, else it is already entered
         }
+        // Nun den Rest
         allValues[idx].values = val;                            // now push all into the big array
         allValues[idx].properties.name = body[i].sensor.sensor_type.name;  // add properties:
         allValues[idx].properties.date_since =  '1900-01-01';                           // name ..
