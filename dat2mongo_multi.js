@@ -17,7 +17,7 @@
 
 const LIVE=true;
 
-const MAXENTRYBATCH = 50000;
+const MAXENTRYBATCH = 5000ƒ0;
 
 const request = require('request');
 const moment = require('moment');
@@ -160,8 +160,10 @@ function constructDBaseEntries(body) {
         // Nun den Rest hochladen nach
         allValues[idx].values = val;                            // now push all into the big array
         allValues[idx].properties.name = body[i].sensor.sensor_type.name;  // add properties:
-        allValues[idx].properties.date_since =  '1900-01-01';                           // name ..
-        allValues[idx].properties.location =  body[i].location;                          // and locatuin
+        allValues[idx].properties.date_since =  '1900-01-01';   // name ..
+        allValues[idx].properties.location =  body[i].location; // and location
+        allValues[idx].properties.location.altitude = 0;
+        allValues[idx].properties.location.address = {};
         let fnd = allValues.findIndex(function (obj) {
             return obj.properties.location.id === body[i].location.id;
         });
@@ -190,22 +192,18 @@ function constructDBaseEntries(body) {
 
 async function doTheEntry(entries) {
     const collections = await dBase.listCollections().toArray();    // read all collection names
-    let counter = 0;                                            // counter for MAXENTRYBATCH
     let inserted = 0;                                           // count number of inserted records
     for (let i=0; i< entries.length; i++) {                     // loop through all entries
         let cname = entries[i].sid + '_current';                // build collection name
         var coll = dBase.collection(cname);                     // use this collection
         if (!collections.map(c => c.name).includes(cname)) {    // does it already exist?
-            counter++;
-            console.log(counter, "New Collection:",cname);      // no, log it
-            if (counter == MAXENTRYBATCH) {                     // if MAXENTRYBATCH non existant are done
-                return;                                         // finish
-            }
-            inserted = await coll.insertOne({ properties: entries[i].properties});  // otherwise save properties
+            console.log("New:",cname);                          // no -> show it it
+            entries[i].properties.location.altitude = fetchAltitude(entries[i].properties.location);
+            entries[i].properties.location.address = fetchAddress(entries[i].properties.location);
+            inserted = await coll.insertOne({ properties: entries[i].properties});  // and save properties
             await coll.createIndex({ datetime:1}, { expireAfterSeconds: 2764800});  // expire after 32 days
-            // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  hier dann die collection createn UND den Eintrag in der
-            // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  korrelation-Table machen und dann RETURN ! D.h. die aktuellen Werte
-            // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<  nicht mit eintragen
+
+
         } else {                                                // collection exists
             let doc = await coll.findOne({datetime: entries[i].values[0].datetime});
             if(doc == null) {
@@ -230,6 +228,16 @@ function minsec(msec) {
     msec -= min*60000;
     let sec = (msec/1000).toFixed(2);
     return nullfill(min) + ':' + nullfill(sec) + ' min:sec';
+}
+
+// fetch altitude from Google
+function fetchAltitude(koord) {
+    return 0;
+}
+
+// fetch Address from Google
+function fetchAddress(koord) {
+    return { street: '', plz: 0, city: '', country: ''};
 }
 
 /*
