@@ -17,8 +17,6 @@
 
 const LIVE=true;
 
-const MAXENTRYBATCH = 5000ƒ0;
-
 const request = require('request');
 const moment = require('moment');
 const MongoClient = require('mongodb').MongoClient;
@@ -163,6 +161,7 @@ function constructDBaseEntries(body) {
         allValues[idx].properties.date_since =  '1900-01-01';   // name ..
         allValues[idx].properties.location =  body[i].location; // and location
         allValues[idx].properties.location.altitude = 0;
+        allValues[idx].properties.location.date_since = '1901-01-01';
         allValues[idx].properties.location.address = {};
         let fnd = allValues.findIndex(function (obj) {
             return obj.properties.location.id === body[i].location.id;
