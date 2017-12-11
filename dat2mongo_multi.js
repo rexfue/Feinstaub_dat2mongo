@@ -30,7 +30,11 @@ if (MONGOPORT == undefined) { MONGOPORT =  27017; }
 const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaub';  	// URL to mongo database
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data24h.json';	// URL to API on 'luftdaten.info'
-const SAVE_NAME = 'data/aktdata.json';								// filename for actual data
+const SAVE_NAME = 'data/aktdata.json';  // filename for actual data
+
+const APIKEY = "&key=AIzaSyBpQm2BKLtU2oxdrgy45s27ao3J1cBj64E";
+const GOOGLE_ELEVATION='https://maps.googleapis.com/maps/api/elevation/json?locations=';
+const GOOGLE_ADDRESS='https://maps.googleapis.com/maps/api/geocode/json?latlng=';
 
 let dBase = null;
 let start = moment();
@@ -252,10 +256,9 @@ function minsec(msec) {
 // fetch altitude from Google
 function fetchAltitude(koord) {
     const p = new Promise((resolve, reject) => {
-        let lat = koord.latitude;
-        let lon = koord.longitude;
         let altitude = 0;
-        request('https://maps.googleapis.com/maps/api/elevation/json?locations=' + lat + ',' + lon + '&key=AIzaSyBpQm2BKLtU2oxdrgy45s27ao3J1cBj64E', function (error, response, body) {
+        let rq = GOOGLE_ELEVATION + koord.latitude + ',' + koord.longitude;
+        request(rq + APIKEY, function (error, response, body) {
             let jsBody;
 //            console.log('error:', error); // Print the error if one occurred
 //            console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
@@ -266,7 +269,7 @@ function fetchAltitude(koord) {
                 altitude = jsBody.results[0].elevation;
                 resolve(altitude);
             } catch (err) {
-                console.log(err)
+                console.log(err,rq)
                 reject(err);
             }
         });
@@ -279,11 +282,10 @@ function fetchAltitude(koord) {
 function fetchAddress(koord) {
     const p = new Promise((resolve, reject) =>
     {
-        let lat = koord.latitude;
-        let lon = koord.longitude;
         let toInsert = {};
-        request('https://maps.googleapis.com/maps/api/geocode/json?latlng=' + lat + ',' + lon + '&key=AIzaSyBpQm2BKLtU2oxdrgy45s27ao3J1cBj64E', function (error, response, body) {
-            let jsBody;
+        let rq = GOOGLE_ADDRESS + koord.latitude + ',' + koord.longitude;
+        request(rq + APIKEY, function (error, response, body) {
+        let jsBody;
  //           console.log('error:', error); // Print the error if one occurred
  //           console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
             try {
@@ -313,7 +315,7 @@ function fetchAddress(koord) {
                     resolve(toInsert);
                 }
             } catch (err) {
-                console.log(err);
+                console.log(err,rq);
                 reject(err)
             }
         });
