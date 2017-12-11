@@ -227,8 +227,7 @@ async function doTheEntry(entries) {
     const collections = await dBase.listCollections().toArray();    // read all collection names
     let inserted = 0;                                           // count number of inserted records
     let korr = dBase.collection('properties');
-//    for (let i=0; i< entries.length; i++) {                     // loop through all entries
-    for (let i=0; i< 500; i++) {                                // loop through all entries
+    for (let i=0; i< entries.length; i++) {                     // loop through all entries
         let cname = entries[i].sid + '_current';                // build collection name
         var coll = dBase.collection(cname);                     // use this collection
         if (!collections.map(c => c.name).includes(cname)) {    // does it already exist?
