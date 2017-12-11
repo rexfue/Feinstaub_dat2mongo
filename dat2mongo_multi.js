@@ -39,6 +39,9 @@ let icount=0;
 let dcount=0;
 let allcount=0;
 
+// fix date 'date_since'
+const D1900 = moment('1900-01-01').toDate();
+
 console.log("\n\rStart: ", start.format("YYYY-MM-DD HH:mm"));
 
 
@@ -153,15 +156,20 @@ function constructDBaseEntries(body) {
             }
         }
         if (x == true) {                                        // if flag set (after loop)
-            val.push(entry);                                    // push te entry, else it is already entered
+            val.push(entry);                                    // push the entry, else it is already entered
         }
-        // Nun den Rest hochladen nach
         allValues[idx].values = val;                            // now push all into the big array
-        allValues[idx].properties.name = body[i].sensor.sensor_type.name;  // add properties:
-        allValues[idx].properties.date_since =  '1900-01-01';   // name ..
-        allValues[idx].properties.location =  body[i].location; // and location
+        allValues[idx].properties.name = body[i].sensor.sensor_type.name;  // add properties: name, ...
+        if (allValues[idx].properties.name == 'DHT22') {
+            console.log("DHT")
+        }
+        allValues[idx].properties.date_since =  D1900;          // date ...
+        allValues[idx].properties.location =  body[i].location; // ... and location
+        // convert lat and lon to float
+        allValues[idx].properties.location.latitude = checkLatLon(allValues[idx].properties.location.latitude)
+        allValues[idx].properties.location.longitude = checkLatLon(allValues[idx].properties.location.longitude)
         allValues[idx].properties.location.altitude = 0;
-        allValues[idx].properties.location.date_since = '1901-01-01';
+        allValues[idx].properties.location.date_since = D1900;
         allValues[idx].properties.location.address = {};
         let fnd = allValues.findIndex(function (obj) {
             return obj.properties.location.id === body[i].location.id;
@@ -169,6 +177,10 @@ function constructDBaseEntries(body) {
         if ((fnd != -1) && (fnd != idx)) {                      // same location -> korrelate (skip own sid)
             if((allValues[fnd].properties.othersensors).indexOf(body[i].sensor.id) == -1) {  // if not already stored
                 allValues[fnd].properties.othersensors.push(body[i].sensor.id);  // enter sid
+            }
+            let fndsid = allValues[fnd].sid;
+            if((allValues[idx].properties.othersensors).indexOf(fndsid) == -1) {  // if not already stored
+                allValues[idx].properties.othersensors.push(fndsid);  // enter sid
             }
         }
     }
@@ -197,8 +209,9 @@ async function doTheEntry(entries) {
         var coll = dBase.collection(cname);                     // use this collection
         if (!collections.map(c => c.name).includes(cname)) {    // does it already exist?
             console.log("New:",cname);                          // no -> show it it
-            entries[i].properties.location.altitude = fetchAltitude(entries[i].properties.location);
-            entries[i].properties.location.address = fetchAddress(entries[i].properties.location);
+            let altitude = await fetchAltitude(entries[i].properties.location);
+            entries[i].properties.location.altitude = Math.floor(altitude);
+            entries[i].properties.location.address = await fetchAddress(entries[i].properties.location);
             inserted = await coll.insertOne({ properties: entries[i].properties});  // and save properties
             await coll.createIndex({ datetime:1}, { expireAfterSeconds: 2764800});  // expire after 32 days
 
@@ -216,6 +229,16 @@ async function doTheEntry(entries) {
     }
 }
 
+// Check lat/lon and convert to float
+function checkLatLon(w) {
+    if ((w == null) || (w == "")) {
+        return 0.0;
+    } else {
+        return parseFloat(w);
+    }
+}
+
+
 // Vorne 0 hinschreiben, wenn n < 10 ist
 function nullfill(n) {
     return (n < 10) ? ('0' + n) : n;
@@ -231,13 +254,76 @@ function minsec(msec) {
 
 // fetch altitude from Google
 function fetchAltitude(koord) {
-    return 0;
+    const p = new Promise((resolve, reject) => {
+        let lat = koord.latitude;
+        let lon = koord.longitude;
+        let altitude = 0;
+        request('https://maps.googleapis.com/maps/api/elevation/json?locations=' + lat + ',' + lon + '&key=AIzaSyBpQm2BKLtU2oxdrgy45s27ao3J1cBj64E', function (error, response, body) {
+            let jsBody;
+            console.log('error:', error); // Print the error if one occurred
+            console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
+            try {
+                jsBody = JSON.parse(body);
+                console.log('result:', jsBody.results);
+                console.log("Altitude ist", jsBody.results[0].elevation);
+                altitude = jsBody.results[0].elevation;
+                resolve(altitude);
+            } catch (err) {
+                console.log(err)
+                reject(err);
+            }
+        });
+    });
+    return p;
 }
+
 
 // fetch Address from Google
 function fetchAddress(koord) {
-    return { street: '', plz: 0, city: '', country: ''};
+    const p = new Promise((resolve, reject) =>
+    {
+        let lat = koord.latitude;
+        let lon = koord.longitude;
+        let toInsert = {};
+        request('https://maps.googleapis.com/maps/api/geocode/json?latlng=' + lat + ',' + lon + '&key=AIzaSyBpQm2BKLtU2oxdrgy45s27ao3J1cBj64E', function (error, response, body) {
+            let jsBody;
+            console.log('error:', error); // Print the error if one occurred
+            console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
+            try {
+                jsBody = JSON.parse(body);
+                let addr = jsBody.results[0].address_components;
+                if (addr != "") {
+                    for (let i = 0; i < addr.length; i++) {
+                        if (addr[i].types[0] == 'street_number') {
+                            toInsert.number = addr[i].short_name;
+                        }
+                        if (addr[i].types[0] == 'route') {
+                            toInsert.street = addr[i].short_name;
+                        }
+                        if (addr[i].types[0] == 'locality') {
+                            toInsert.city = addr[i].long_name;
+                        }
+                        if (addr[i].types[0] == 'country') {
+                            toInsert.country = addr[i].short_name;
+                        }
+                        if (addr[i].types[0] == 'political') {
+                            toInsert.region = addr[i].short_name;
+                        }
+                        if (addr[i].types[0] == 'postal_code') {
+                            toInsert.plz = Math.floor(addr[i].short_name);
+                        }
+                    }
+                    resolve(toInsert);
+                }
+            } catch (err) {
+                console.log(err);
+                reject(err)
+            }
+        });
+    });
+    return p;
 }
+
 
 /*
 //https://zeit.co/blog/async-and-await
@@ -249,5 +335,34 @@ function sleep (time) {
 sleep(500).then(() => {
     // Do something after the sleep!
 });
+
+def addAltitude(loc):
+	""" fetch the altitude of location coordinates via Google-API """
+	try:
+		r = requests.get('https://maps.googleapis.com/maps/api/elevation/json?locations={0},{1}&key=AIzaSyBpQm2BKLtU2oxdrgy45s27ao3J1cBj64E'.format(loc[0],loc[1]))
+		places = r.json()
+		eletxt = 'At {0} elevation is: {1}'
+		print (eletxt.format(loc, places['results'][0]['elevation']))
+	except:
+		print (('Error in altitude for location: {0}').format(loc))
+		return 0
+	return round(places['results'][0]['elevation'])
+#Ende: def addAltitude(loc):
+
+
+
+def addAddress(loc):
+	""" Fetch address for location coordinates via Google-API """
+
+	try:
+		r = requests.get('https://maps.googleapis.com/maps/api/geocode/json?latlng={0},{1}&key=AIzaSyBpQm2BKLtU2oxdrgy45s27ao3J1cBj64E'.format(loc[0],loc[1]))
+		addr = r.json()
+#		print (addr)
+	except:
+		print(('Error in address for location: {0}').format(loc))
+		return ""
+	return addr['results'][0]['address_components']
+#end: def addAddress(loc):
+
 
 */
