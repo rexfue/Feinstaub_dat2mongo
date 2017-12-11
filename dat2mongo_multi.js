@@ -290,6 +290,7 @@ function fetchAddress(koord) {
  //           console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
             try {
                 jsBody = JSON.parse(body);
+                console.log(jsBody);
                 if (jsBody == undefined) {
                     reject("jsbody undef: ", rq);
                 }
