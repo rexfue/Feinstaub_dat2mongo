@@ -257,12 +257,12 @@ function fetchAltitude(koord) {
         let altitude = 0;
         request('https://maps.googleapis.com/maps/api/elevation/json?locations=' + lat + ',' + lon + '&key=AIzaSyBpQm2BKLtU2oxdrgy45s27ao3J1cBj64E', function (error, response, body) {
             let jsBody;
-            console.log('error:', error); // Print the error if one occurred
-            console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
+#            console.log('error:', error); // Print the error if one occurred
+#            console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
             try {
                 jsBody = JSON.parse(body);
-                console.log('result:', jsBody.results);
-                console.log("Altitude ist", jsBody.results[0].elevation);
+#                console.log('result:', jsBody.results);
+#                console.log("Altitude ist", jsBody.results[0].elevation);
                 altitude = jsBody.results[0].elevation;
                 resolve(altitude);
             } catch (err) {
@@ -284,8 +284,8 @@ function fetchAddress(koord) {
         let toInsert = {};
         request('https://maps.googleapis.com/maps/api/geocode/json?latlng=' + lat + ',' + lon + '&key=AIzaSyBpQm2BKLtU2oxdrgy45s27ao3J1cBj64E', function (error, response, body) {
             let jsBody;
-            console.log('error:', error); // Print the error if one occurred
-            console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
+ #           console.log('error:', error); // Print the error if one occurred
+ #           console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
             try {
                 jsBody = JSON.parse(body);
                 let addr = jsBody.results[0].address_components;
