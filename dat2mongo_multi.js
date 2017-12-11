@@ -160,9 +160,6 @@ function constructDBaseEntries(body) {
         }
         allValues[idx].values = val;                            // now push all into the big array
         allValues[idx].properties.name = body[i].sensor.sensor_type.name;  // add properties: name, ...
-        if (allValues[idx].properties.name == 'DHT22') {
-            console.log("DHT")
-        }
         allValues[idx].properties.date_since =  D1900;          // date ...
         allValues[idx].properties.location =  body[i].location; // ... and location
         // convert lat and lon to float
