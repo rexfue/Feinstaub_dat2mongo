@@ -54,7 +54,7 @@ const defaultAddress = {
     region: 'BW',
     country: 'DE',
     plz: 70176,
-    street: 'F'
+    street: 'Fo'
 }
 
 console.log("\n\rStart: ", start.format("YYYY-MM-DD HH:mm"));

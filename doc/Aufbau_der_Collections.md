@@ -1,38 +1,13 @@
 ##Feinstaub
 
 ### Aufbau der Collections
-Jeder Sensor bekommt 2 identisch aufgebaute Collections. Die Collection **SID_current** enthält die aktuellen Daten, die Collection **SID_saved** enthält **alle** Daten von Anfang an bis *gestern* ( oder auch *vorgestern*, ja nachdem wir aktuell *luftadaten.info* doe CSV-Dateien hält). Zusätzlich gibt es für jeden Sensor noch die Collection **SIUD_daymean** mit den Tages-Mittelwerten.
+Jeder Sensor bekommt 2 identisch aufgebaute Collections. Die Collection **SID_current** enthält die 
+aktuellen Daten, die Collection **SID_saved** enthält **alle** Daten von vor ca. 1 Jahr bis *gestern* ( oder 
+auch *vorgestern*, ja nachdem wir aktuell *luftadaten.info* die CSV-Dateien hält). 
+Zusätzlich gibt es für alle Sensoren eine gemainsame Collection mit den Eigenschaften (**properties**)
 
 	# SID_current / SID_saved
 
-	properties: {
-		name: 'SDS011',
-		since_date: '1900-01-01'
-		location: {
-			loc_id: 345,
-			latitude: 48.567,
-			longitude: 9.1599,
-			altitude: 280,
-			since_date: '1900-01-01'
-			adress: {
-               street:  'Forststr. 66a',
-               plz: 70176.
-               city:  'Stuttgart'
-               country: 'Germany'
-			}
-		}
-	}
-	
-	othersensors: [ 
-		{
-			sid: 141,
-			since_date: '1900-01-01'
-		}, {
-			...
-		}
-	]
-	
-		
 	{ 
 		datetime: '2017-12-05T12:34:00Z',
 		P10: 12.45,
@@ -56,45 +31,52 @@ Jeder Sensor bekommt 2 identisch aufgebaute Collections. Die Collection **SID_cu
 		pressure_m24: 9800.6
 	}
 
- 
+.  	
 
-	# SID_daymean
+    ## Properties
+	sid: 140,
+	name: 'SDS011',
+	since_date: '1900-01-01'
+    location: {
+        id: 345,
+        latitude: 48.567,
+        longitude: 9.1599,
+        altitude: 280,
+        since_date: '1900-01-01'
+        adress: {
+           number: '66a',
+           street:  'Forststrasse',
+           plz: 70176.
+           city:  'Stuttgart'
+           region: 'Baden-Württemberg',
+           country: 'Germany'
+        }
+    }
+	othersensors: [ 
+		{
+			sid: 141,
+			since_date: '1900-01-01'
+		}, {
+			...
+		}
+	]
 	
-	{
-		date: 2017-11-23,
-		P10_min: 12.34,
-		P10_max: 56.5,
-		P10_m24: 33.5,
-		P2_5_min: 2.34,
-		P2_5_max: 6.5,
-		P2_5_m24: 3.5,
-	}
-	oder
-	{
-		date: 2017-11-23,
-		temperature_mim: -5.5
-		temperature_max:	22.3
-		temperature_m24: 10.0
-		humidity_min: 30,
-		humidity_max: 98.7,
-		humidity_m24: 66.6,
-		pressure_min: 948,
-		pressure_max: 1034,
-		pressure_m24: 1000,
-	}
-	
-
-
+		
 
 ### Aktuell einlaufende Daten
-Diese werden in den Collections **SID_current** eingetragen. Sie werden alle 5min vom *luftdaten.info*-Server abgeholt. Es werden max. 32 Tage gespeichert (TTL-Index).  
-Die 24h-Mittelwerte werden laufen mitgerechnet und mit gespeichert. Täglich um 0h00 bzw. direkt davor werden sie zusätzlich in der Collection für die Tagesmittelwerte gespeichert.  
+Diese werden in den Collections **SID_current** eingetragen. Sie werden alle 5min vom *luftdaten.info*-Server 
+abgeholt. Es werden max. 32 Tage gespeichert (TTL-Index).  
 **Index** ist auf den Zeitstempel (datetime) datetime der einzelnen Werte-Dokumente
 
-###Tagesmittelwerte
-Diese werden in den Collections **SID_daymean** täglich um 0h00 für den vergangenen Tag gespeichert. **Index** ist das Datum (date).  
 ###Dauerwerte
-Diese werden jeden Tag (1x, z.B. mittags um 12) vom Luftdatenserver geholt und in die *große* Datenbank eingetragen (**SID_saved**). Deren Aufbau ist genau wie die **SID_current**.    
+Diese werden jeden Tag (1x, z.B. mittags um 12) vom Luftdatenserver geholt und in die *große* Datenbank eingetragen 
+(**SID_saved**). Deren Aufbau ist genau wie die **SID_current**.    
 Jede Collection hat einen **Index** auf den Zeitstempel (**datetime**).
+
+###Location-Tabelle
+Hier werden für jeden Sensor die Ortskoordinaten, die Adresse und die zum Standort gehörenden anderen Sensoren 
+eingetragen. Aufbau siehe oben, die Collection heißt **properties**.  
+Diese Collection wird 1x pro Tag aus den gerade aktuellen Daten erneuert bzw. ergänzt. 
+
 
 rxf 2017-12-05
