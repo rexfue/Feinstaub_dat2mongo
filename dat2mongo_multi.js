@@ -183,8 +183,10 @@ function constructDBaseEntries(body) {
                     type: "Point",
                     coordinates: [checkLatLon(body[i].location.longitude), checkLatLon(body[i].location.latitude)]
                 },
+                id : body[i].location.id,
                 altitude: 0,
-                address: defaultAddress
+                address: defaultAddress,
+                date_since: D1900,
             },
             othersensors : [],
         }
