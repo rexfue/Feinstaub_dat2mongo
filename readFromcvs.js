@@ -10,22 +10,22 @@ const moment = require('moment');
 const MongoClient = require('mongodb').MongoClient;
 const fs = require('fs');
 // const lc = require('./locationcheck.js');
-let $ = jQuery = require('jQuery');
+let $ = jQuery = require('jquery');
 require('./jquery.csv.js');
 
 
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
-if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT == undefined) { MONGOPORT =  27017; }
+if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
+if (MONGOPORT === undefined) { MONGOPORT =  27017; }
 
 const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaub';  	// URL to mongo database
 const API_URL = 'http://archive.luftdaten.info/';	            // URL to API on 'luftdaten.info'
-const NEWSID_NAME = 'data/newsids.txt';               // filename for new sensors
+const NEWSID_NAME = 'data/newsids_s.txt';               // filename for new sensors
 
 // We store max. one year in our database, that means we start collecting data
 // from 2016-11-01 on
-const STARTDATE='2017-12-01';
+const STARTDATE='2017-11-01';
 
 let dBase = null;
 let start = moment();
@@ -61,6 +61,7 @@ async function readSensorsperDay() {
     end.add(10, 'day');
     let now = moment();
     for (let d = st; d < end; d.add(1, 'day')) {
+        start = moment();
         insertCount = 0;
         console.log('\n***************', d.format('YYYY-MM-DD'));
         let mist = false;
@@ -103,14 +104,13 @@ function getdirlistOfOneDay(day) {
             resolve(list);
         });
     });
-
     return p;
 }
 
 async function enterSensors(list,dt) {
     for (let i=0; i< list.length; i++) {
         let icount = await putOneSensorInDb(list[i],dt);
-        if ((i % 100 == 0) {
+        if ((i % 100) == 0) {
             process.stdout.write('\n' + i + ' ');
         }
         process.stdout.write('.');
