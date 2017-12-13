@@ -240,8 +240,7 @@ async function doTheEntry(entries) {
         } else {                                      // collection exists
             let doc = await coll.findOne({datetime: entries[i].values[0].datetime});
             if(doc == null) {
-                inserted = await
-                coll.insertMany(entries[i].values);  // so save new values
+                inserted = await coll.insertMany(entries[i].values);  // so save new values
                 icount += inserted.insertedCount;
             } else {
                 dcount+=entries[i].values.length;
