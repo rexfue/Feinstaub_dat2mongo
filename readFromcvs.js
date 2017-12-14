@@ -25,7 +25,7 @@ const NEWSID_NAME = 'data/newsids_s.txt';               // filename for new sens
 
 // We store max. one year in our database, that means we start collecting data
 // from 2016-11-01 on
-const STARTDATE='2017-11-01';
+const STARTDATE='2016-11-01';
 
 let dBase = null;
 let start = moment();
@@ -58,7 +58,7 @@ MongoClient.connect(MONGO_URL, function(err,db) {
 async function readSensorsperDay() {
     let st = moment(STARTDATE);
     let end = moment(STARTDATE);
-    end.add(10, 'day');
+    end.add(1, 'day');
     let now = moment();
     for (let d = st; d < end; d.add(1, 'day')) {
         start = moment();
