@@ -27,7 +27,7 @@ const fs = require('fs');
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT == undefined) { MONGOPORT =  27017; }
+if (MONGOPORT == undefined) { MONGOPORT =  27018; }
 
 const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaub';  	// URL to mongo database
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
@@ -49,11 +49,11 @@ let allcount=0;
 // fix date 'date_since'
 const D1900 = moment('1900-01-01').toDate();
 const defaultAddress = {
-    number: '6',
+    number: 'NA',
     city: 'S',
     region: 'BW',
     country: 'DE',
-    plz: 70176,
+    plz: NaN,
     street: 'F'
 }
 
@@ -178,7 +178,7 @@ function constructDBaseEntries(body) {
             sid:  body[i].sensor.id,
             name: body[i].sensor.sensor_type.name,
             date_since: D1900,
-            location: {
+            location: [{
                 loc: {
                     type: "Point",
                     coordinates: [checkLatLon(body[i].location.longitude), checkLatLon(body[i].location.latitude)]
@@ -186,8 +186,8 @@ function constructDBaseEntries(body) {
                 id : body[i].location.id,
                 altitude: 0,
                 address: defaultAddress,
-                date_since: D1900,
-            },
+                date_since: moment().toDate(),
+            }],
             othersensors : [],
         }
         allValues[idx].properties = properties;
@@ -230,14 +230,15 @@ async function doTheEntry(entries) {
     let inserted = 0;                                           // count number of inserted records
     let korr = dBase.collection('properties');
     for (let i=0; i< entries.length; i++) {                     // loop through all entries
-        let cname = entries[i].sid + '_current';                // build collection name
+//        let cname = entries[i].sid + '_current';                // build collection name
+        let cname = 'data_'+entries[i].sid + '_' + entries[i].properties.name;                // build collection name
         var coll = dBase.collection(cname);                     // use this collection
         if (!collections.map(c => c.name).includes(cname)) {    // does it already exist?
             console.log("New:",cname);                          // no -> show it it
             inserted = await korr.insertOne( entries[i].properties);  // and save properties
-            await dBase.createCollection(cname)
+            await dBase.createCollection(cname);
             await coll.createIndex({ datetime:1}, { expireAfterSeconds: 2764800});  // expire after 32 days
-        } else {                                      // collection exists
+        } else {                                                // collection exists
             let doc = await coll.findOne({datetime: entries[i].values[0].datetime});
             if(doc == null) {
                 inserted = await coll.insertMany(entries[i].values);  // so save new values
