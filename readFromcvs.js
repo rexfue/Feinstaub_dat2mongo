@@ -17,7 +17,7 @@ require('./jquery.csv.js');
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT === undefined) { MONGOPORT =  27017; }
+if (MONGOPORT === undefined) { MONGOPORT =  27018; }
 
 const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaub';  	// URL to mongo database
 const API_URL = 'http://archive.luftdaten.info/';	            // URL to API on 'luftdaten.info'
@@ -25,13 +25,14 @@ const NEWSID_NAME = 'data/newsids_s.txt';               // filename for new sens
 
 // We store max. one year in our database, that means we start collecting data
 // from 2016-11-01 on
-const STARTDATE='2016-11-01';
+const STARTDATE='2016-11-09';
 
 let dBase = null;
 let start = moment();
 let end, end1;
 let sidArray = [];
 let insertCount = 0;
+var collNames = [];
 
 
 MongoClient.connect(MONGO_URL, function(err,db) {
@@ -58,9 +59,17 @@ MongoClient.connect(MONGO_URL, function(err,db) {
 async function readSensorsperDay() {
     let st = moment(STARTDATE);
     let end = moment(STARTDATE);
-    end.add(1, 'day');
+    end.add(2, 'day');
     let now = moment();
     for (let d = st; d < end; d.add(1, 'day')) {
+        let data = await dBase.listCollections().toArray()  // read all collection names for every day
+        for (x in data) {
+            let n = data[x].name;
+//            console.log(x, n);
+            if(n.indexOf('saved') !== -1) {
+                collNames.push(n.substring(0,n.indexOf('_')));
+            }
+        }
         start = moment();
         insertCount = 0;
         console.log('\n***************', d.format('YYYY-MM-DD'));
@@ -124,7 +133,6 @@ function putOneSensorInDb(name,dt) {
     const p = new Promise((resolve, reject) => {
         let url = API_URL + dt + '/' + name;
         let sid = name.split("_")[3].replace('.csv','');
-        putSIDinArray(sid);
         request(url, function (error, response, body) {
             if(response.statusCode != 200) {
                 reject("Error",error);
@@ -144,18 +152,37 @@ function putOneSensorInDb(name,dt) {
                 }
 //                console.log('SID:',sid);
                 let coll = dBase.collection(sid+'_saved');
-                coll.insertMany(all, function(err,inserted) {
-                    if (err) {
-                        console.log("Nach insertMany:",err);
-                        reject(err);
-                    }
-                    resolve(inserted.insertedCount);
-                });
+                if (!collNames.map(c => c).includes(sid)) {                // does it already exist?
+                    console.log('New Sensor:',sid);
+                    putSIDinArray(sid);
+                    dBase.createCollection(sid+'_saved',function(err,collection){   // no -> cretate collectiom
+                        if(err) reject(err);
+                        coll.createIndex({ datetime:1}, { expireAfterSeconds: 34560000}, function(err,result) {  // expire after 400 days
+                            if(err) reject(err)
+                            coll.insertMany(all, function(err,inserted) {       // then inser values
+                                if (err) {
+                                    console.log("Nach insertMany:", err);
+                                    reject(err);
+                                }
+                                resolve(inserted.insertedCount);                // all OK -> resolve))
+                            });
+                        });
+                    });
+                } else {
+                    coll.insertMany(all, function(err,inserted) {               // if collection already existes
+                        if (err) {                                              // only insert values
+                            console.log("Nach insertMany:", err);
+                            reject(err);
+                        }
+                        resolve(inserted.insertedCount);
+                    });
+                }
             });
         });
     });
     return p;
 }
+
 
 
 // Put name of sensor into sidsArray
