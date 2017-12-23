@@ -47,7 +47,7 @@ let dcount=0;
 let allcount=0;
 
 // fix date 'date_since'
-const D1900 = moment.utc('1900-01-01').toDate();
+const D1900 = moment('1900-01-01').toDate();
 const defaultAddress = {
     number: 'NA',
     city: 'S',
@@ -115,7 +115,7 @@ function doReadfromAPI() {
 
 // var obj = objArray.find(function (obj) { return obj.id === 3; });
 
-// die Daten in eimnr Datei zwischenspeichern
+// die Daten in einer Datei zwischenspeichern
 function saveDatatoFile(data) {
     fs.writeFileSync(SAVE_NAME,data);
 }
@@ -146,7 +146,7 @@ function constructDBaseEntries(body) {
 //            allValues[idx].properties.othersensors = [];        // init array for the other sensors on same location
         }
         let date = moment.utc(body[i].timestamp);               // extract date of entry
-        entry.date = date.toDate();					        // make date for Mongo (== ISODate)
+        entry.datetime = date.toDate();					        // make date for Mongo (== ISODate)
         let values = body[i].sensordatavalues;                  // fetch values
         for (let n = 0; n < values.length; n++) {               // for all values
             let typ = values[n].value_type;                     // extract type
@@ -162,10 +162,10 @@ function constructDBaseEntries(body) {
         }
         let x = true;                                           // set flag
         for (let n = 0; n < val.length; n++) {                  // for all values in this entry
-            if (date.isSame(val[n].date)) {                 // if the same date is aready entered
-                delete entry.date;                          // delete it
+            if (date.isSame(val[n].datetime)) {                 // if the same date is aready entered
+                delete entry.datetime;                          // delete it
                 for (var k in entry) {                          // and enter the typ and value
-                    val[n][k] = entry[k];
+                    val[n][x] = entry[k];
                 }
                 ;
                 x = false;                                      // clear flag
@@ -213,8 +213,7 @@ function constructDBaseEntries(body) {
 	let los = moment();
 	console.log("Parsen dauert:", los-st1);
 
-
-	doTheEntry(allValues).then(() => {
+    doTheEntry(allValues).then(() => {
 //        let now = moment();
 //        if (now.format('HH:mm') == LOCATION_TIME) {
 //            await lc.locationcheck(dBase);
@@ -225,8 +224,7 @@ function constructDBaseEntries(body) {
         gz = moment()-start;
         console.log("Gesamtzeit: ", gz ,'msec  ', minsec(gz));
         console.log("icount=",icount,"  dcount=",dcount,"  allcount:",allcount);
-        console.log("All thru")
-	});
+        console.log("All thru")});
 }
 
 
@@ -234,30 +232,24 @@ async function doTheEntry(entries) {
     const collections = await dBase.listCollections().toArray();    // read all collection names
     let inserted = 0;                                           // count number of inserted records
     let korr = dBase.collection('properties');
-    console.log("Einträge gesamt:",entries.length);
     for (let i=0; i< entries.length; i++) {                     // loop through all entries
 //        let cname = entries[i].sid + '_current';                // build collection name
-        if ((i % 100) == 0) {
-            process.stdout.write('\n' + i + ' ');
-        }
-        process.stdout.write('.');
         let cname = 'data_'+entries[i].sid + '_' + entries[i].properties.name;                // build collection name
         var coll = dBase.collection(cname);                     // use this collection
-//  	console.log(entries[i]);
         if (!collections.map(c => c.name).includes(cname)) {    // does it already exist?
-            console.log("New:",cname);                          // no -> show it it
-            inserted = await korr.insertOne( entries[i].properties);  // and save properties
+            console.log("New:",cname);                          // no -> show it and ...
+            inserted = await korr.insertOne( entries[i].properties);  // ... save properties
             await dBase.createCollection(cname);
-            await coll.createIndex({ date:1}, { expireAfterSeconds: 2764800});  // expire after 32 days
+            await coll.createIndex({ datetime:1}, { expireAfterSeconds: 2764800});  // expire after 32 days
         } else {                                                // collection exists
             entries[i].values.sort(compareValues);              // sort values according to time
             for (let j=0; j<entries[i].values.length; i++) {
-                let doc = await coll.findOne({date: entries[i].values[j].date});  // if oldest is not in DB
+                let doc = await coll.findOne({datetime: entries[i].values[j].datetime});  // if oldest is not in DB
                 if(doc == null) {
                     inserted = await coll.insertMany(entries[i].values);  // so save new values
                     icount += inserted.insertedCount;
                     break;                                      // and exit loop
-                } else {                                        // if oldest is IN DB, count it
+                } else {                                        // if oldest is in DB, count it
                     dcount++;                                   // and check next
                 }
             }
@@ -267,10 +259,10 @@ async function doTheEntry(entries) {
 
 // Compare values array according to time
 function compareValues(a,b) {
-    if( a.date < b.date ) {
+    if( a.datetime < b.datetime ) {
         return -1;
     }
-    if( a.date > b.date ) {
+    if( a.datetime > b.datetime ) {
         return 1
     }
     return 0;

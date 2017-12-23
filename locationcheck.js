@@ -1,7 +1,7 @@
 /** locationcheck.js            rxf     2017-12-11
 
     Check the file 'newsid' for new entries. For every entry find the address
-    via goole maps API. Because of restrictions (max 2500 reuwsts/day), we look
+    via goole maps API. Because of restrictions (max 2500 requsts/day), we look
     for max LOCATION_MAX (1000) addresses in one call.
     After adding the address to the dbase 'properties', we delete tis entry in the
     'newsid'-File.
@@ -13,7 +13,7 @@ const moment = require('moment');
 const MongoClient = require('mongodb').MongoClient;
 const fs = require('fs');
 
-const LOCATION_MAX = 10;                          // so many entries will be checked
+const LOCATION_MAX = 1000;                          // so many entries will be checked
 
 const APIKEY = "&key=AIzaSyBpQm2BKLtU2oxdrgy45s27ao3J1cBj64E";
 const GOOGLE_ELEVATION='https://maps.googleapis.com/maps/api/elevation/json?locations=';
@@ -23,8 +23,8 @@ const GOOGLE_ADDRESS='https://maps.googleapis.com/maps/api/geocode/json?latlng='
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT == undefined) { MONGOPORT =  27018; }
-const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaub';  	// URL to mongo database
+if (MONGOPORT == undefined) { MONGOPORT =  27020; }
+const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
 
 const FILE1 = 'data/newsids_s.txt';
 const FILE2 = 'data/newsids_c.txt';
@@ -45,53 +45,56 @@ MongoClient.connect(MONGO_URL, function(err,db) {
 function locationcheck(db) {
     let collprop = db.collection('properties');
     doAddresses(db, collprop, FILE1, 1)
-        .then(() => {
+        .then((cnt) => {
             console.log("Part 1 ready");
+            db.close();
         }, (err) => {
             console.log("Part1 Error:",err);
+            db.close();
         });
-    db.close();
 }
 
 // fetch the addresses and store them into the dbase
 async function doAddresses(db, coll, fn, which) {
-    let i=0;
     try {
         let txt = fs.readFileSync(fn, "utf-8");
         let sid = JSON.parse(txt);
         if (sid.length > 0) {
-            for (; i < sid.length; i++) {                         // loop over all entries in sid-file
-                if (i == LOCATION_MAX) {                                // maxcount reached?
+            for (let i=0; i < sid.length; i++) {                    // loop over all entries in sid-file
+                if (i == LOCATION_MAX) {                            // maxcount reached?
                     break;                                          // yes return
                 }
-                let sensID = parseInt(sid[i]);
+                let sensID = parseInt(sid.shift());                 // pop off top element of sid-array
                 console.log('ID:', sensID);
-                let doc = await coll.findOne({sid: sensID}, {'location.loc.coordinates': 1, _id: 0});        // read location
+                let doc = await coll.findOne({sid: sensID}, {'location': 1, _id: 0});        // read location
                 if (doc == null) {
                     continue;
                 }
-                let latlng = [doc.location.loc.coordinates[1], doc.location.loc.coordinates[0]];
-                let addr = await fetchAddress(latlng);                 // fetch address
-                let altitude = await fetchAltitude(latlng);            // and altitude for thet location
-                console.log('Adresse:',addr);
-                console.log('Höhe:',altitude,'\n');
-                coll.update(
-                    {sid: sensID},
-                    { $set: {'location.address': addr, 'location.altitude': altitude}},
-                    function(err,updated) {
-                        if(err) {
-                            console.log("Err:",err);
-                        }
-                        console.log("UPD",updated);
+                let doUpdate = false;
+                for (let nbr = 0; nbr < doc.location.length; nbr++) {
+                    if(doc.location[nbr].address.number == 'NA') {
+                        doUpdate=true;
+                        let latlng = [doc.location[nbr].loc.coordinates[1], doc.location[nbr].loc.coordinates[0]];
+                        let addr = await fetchAddress(latlng);                 // fetch address
+                        let altitude = await fetchAltitude(latlng);            // and altitude for thet location
+                        console.log('Adresse:',addr);
+                        console.log('Höhe:',altitude,'\n');
+                        doc.location[nbr].address = addr;
+                        doc.location[nbr].altitude = altitude;
                     }
-                );
-                console.log('Updated:', updated.result.n);
+                    if(doUpdate) {
+                        let updated = await coll.updateOne({sid: sensID}, {$set: {'location': doc.location}});
+                        console.log('Updated:', updated.result.n);
+                    }
+                }
+                console.log("Loop ende");
             }
         }
+        fs.writeFile(fn,JSON.stringify(sid),function(err) { if(err) { console.log(err);}});
     }
     catch (e) {
+        console.log("catch:",e);
     }
-    return i;
 }
 
 

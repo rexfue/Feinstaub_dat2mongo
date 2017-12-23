@@ -17,15 +17,16 @@ require('./jquery.csv.js');
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT === undefined) { MONGOPORT =  27018; }
+if (MONGOPORT === undefined) { MONGOPORT =  27020; }
 
-const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaub';  	// URL to mongo database
+const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
 const API_URL = 'http://archive.luftdaten.info/';	            // URL to API on 'luftdaten.info'
-const NEWSID_NAME = 'data/newsids_s.txt';               // filename for new sensors
+const NEWSID_NAME = 'data/newsids_x.txt';               // filename for new sensors
 
 // We store max. one year in our database, that means we start collecting data
 // from 2016-11-01 on
-const STARTDATE='2016-11-09';
+const STARTDATE='2017-12-15';
+const NBROFDAYS=23;
 
 let dBase = null;
 let start = moment();
@@ -59,15 +60,16 @@ MongoClient.connect(MONGO_URL, function(err,db) {
 async function readSensorsperDay() {
     let st = moment(STARTDATE);
     let end = moment(STARTDATE);
-    end.add(2, 'day');
+    end.add(NBROFDAYS, 'day');
     let now = moment();
     for (let d = st; d < end; d.add(1, 'day')) {
         let data = await dBase.listCollections().toArray()  // read all collection names for every day
         for (x in data) {
             let n = data[x].name;
 //            console.log(x, n);
-            if(n.indexOf('saved') !== -1) {
-                collNames.push(n.substring(0,n.indexOf('_')));
+            if(n.startsWith('data_')) {
+                let p = n.split('_');
+                collNames.push(p[1]);
             }
         }
         start = moment();
@@ -129,58 +131,95 @@ async function enterSensors(list,dt) {
 }
 
 
-function putOneSensorInDb(name,dt) {
+async function putOneSensorInDb(name,dt) {
+    let erg = await readOneSensorOneDay(name, dt)
+    return await enterOneSensorinDB(name, dt,erg);
+}
+
+
+function readOneSensorOneDay(name, dt) {
     const p = new Promise((resolve, reject) => {
         let url = API_URL + dt + '/' + name;
-        let sid = name.split("_")[3].replace('.csv','');
+        let sid = name.split("_")[3].replace('.csv', '');
+        let sidName = name.split("_")[1].toUpperCase();
         request(url, function (error, response, body) {
-            if(response.statusCode != 200) {
-                reject("Error",error);
+            if (response.statusCode != 200) {
+                reject("Error", error);
             }
             $.csv.toObjects(body, {separator: ';'}, function (err, data) {
 //                console.log("Lang: ", data.length);
                 let all = [];
                 for (var i = 0; i < data.length; i++) {
                     entry = {};
-                    entry.datetime = data[i].timestamp;
-                    if(data[i].P1 !== undefined) { entry.P10 = parseFloat(data[i].P1); }
-                    if(data[i].P2 !== undefined) { entry.P2_5 = parseFloat(data[i].P2); }
-                    if(data[i].temperature !== undefined) { entry.temperature = parseFloat(data[i].temperature); }
-                    if(data[i].humidity !== undefined) { entry.humidity = parseFloat(data[i].humidity); }
-                    if(data[i].pressure !== undefined) { entry.pressure = parseFloat(data[i].pressure); }
+                    let date = moment.utc(data[i].timestamp);               // extract date of entry
+                    entry.datetime = date.toDate();					        // make date for Mongo (== ISODate)
+                    if (data[i].P1 !== undefined) {
+                        entry.P1 = parseFloat(data[i].P1);
+                    }
+                    if (data[i].P2 !== undefined) {
+                        entry.P2 = parseFloat(data[i].P2);
+                    }
+                    if (data[i].temperature !== undefined) {
+                        entry.temperature = parseFloat(data[i].temperature);
+                    }
+                    if (data[i].humidity !== undefined) {
+                        entry.humidity = parseFloat(data[i].humidity);
+                    }
+                    if (data[i].pressure !== undefined) {
+                        entry.pressure = parseFloat(data[i].pressure);
+                    }
                     all.push(entry)
                 }
-//                console.log('SID:',sid);
-                let coll = dBase.collection(sid+'_saved');
-                if (!collNames.map(c => c).includes(sid)) {                // does it already exist?
-                    console.log('New Sensor:',sid);
-                    putSIDinArray(sid);
-                    dBase.createCollection(sid+'_saved',function(err,collection){   // no -> cretate collectiom
-                        if(err) reject(err);
-                        coll.createIndex({ datetime:1}, { expireAfterSeconds: 34560000}, function(err,result) {  // expire after 400 days
-                            if(err) reject(err)
-                            coll.insertMany(all, function(err,inserted) {       // then inser values
-                                if (err) {
-                                    console.log("Nach insertMany:", err);
-                                    reject(err);
-                                }
-                                resolve(inserted.insertedCount);                // all OK -> resolve))
-                            });
-                        });
-                    });
-                } else {
-                    coll.insertMany(all, function(err,inserted) {               // if collection already existes
-                        if (err) {                                              // only insert values
-                            console.log("Nach insertMany:", err);
-                            reject(err);
-                        }
-                        resolve(inserted.insertedCount);
-                    });
-                }
+                resolve({ all:all, sid:sid, name:sidName });
             });
         });
     });
     return p;
+}
+
+
+
+
+async function enterOneSensorinDB(name,dt,erg) {
+    let sid = erg.sid;
+    let all = erg.all;
+    try {
+        let collName = 'data_' + sid + '_' + erg.name;
+        let coll = dBase.collection(collName);
+        if (!collNames.map(c => c).includes(sid)) {                // does it already exist?
+            console.log('New Sensor:', sid);
+            putSIDinArray(sid);
+            await dBase.createCollection(collName);                 // no -> cretate collectiom
+            await coll.createIndex({datetime: 1}, {expireAfterSeconds: 2764800})  // expire after 400 days
+            let inserted = await coll.insertMany(all)       // then inser values
+            return(inserted.count);
+        } else {
+            let std = moment.utc(dt);
+            let endd = moment.utc(dt);
+            endd.add(1, 'day');
+            let docs = await coll.find({datetime: {$gte: new Date(std), $lt: new Date(endd)}}, {sort: {datetime: 1}}).toArray();
+            for (let i = docs.length - 1; i >= 0; i--) {
+                for (let a = all.length - 1; a >= 0; a--) {
+                    let dt = docs[i].datetime.valueOf();
+                    let at = all[a].datetime.valueOf();
+                    if (dt == at) {
+                        all.splice(a, 1);
+                        break;
+                    }
+                }
+            }
+            if (all.length > 0) {
+                let inserted = {count: 0};
+                inserted = await coll.insertMany(all)              // if collection already existes
+                return(inserted.count);
+            } else {
+                return(0);
+            }
+        }
+    }
+    catch(e) {
+        console.log(e);
+    }
 }
 
 
