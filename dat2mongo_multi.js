@@ -146,7 +146,7 @@ function constructDBaseEntries(body) {
 //            allValues[idx].properties.othersensors = [];        // init array for the other sensors on same location
         }
         let date = moment.utc(body[i].timestamp);               // extract date of entry
-        entry.date = date.toDate();					        // make date for Mongo (== ISODate)
+        entry.date = date.toDate();					            // make date for Mongo (== ISODate)
         let values = body[i].sensordatavalues;                  // fetch values
         for (let n = 0; n < values.length; n++) {               // for all values
             let typ = values[n].value_type;                     // extract type
@@ -162,8 +162,8 @@ function constructDBaseEntries(body) {
         }
         let x = true;                                           // set flag
         for (let n = 0; n < val.length; n++) {                  // for all values in this entry
-            if (date.isSame(val[n].date)) {                 // if the same date is aready entered
-                delete entry.date;                          // delete it
+            if (date.isSame(val[n].date)) {                     // if the same date is aready entered
+                delete entry.date;                              // delete it
                 for (var k in entry) {                          // and enter the typ and value
                     val[n][k] = entry[k];
                 }
