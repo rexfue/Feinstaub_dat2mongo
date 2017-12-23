@@ -27,7 +27,7 @@ const fs = require('fs');
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT == undefined) { MONGOPORT =  27018; }
+if (MONGOPORT == undefined) { MONGOPORT =  27017; }
 
 const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaub';  	// URL to mongo database
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
@@ -237,10 +237,10 @@ async function doTheEntry(entries) {
     console.log("Einträge gesamt:",entries.length);
     for (let i=0; i< entries.length; i++) {                     // loop through all entries
 //        let cname = entries[i].sid + '_current';                // build collection name
-        if ((i % 100) == 0) {
-            process.stdout.write('\n' + i + ' ');
-        }
-        process.stdout.write('.');
+//        if ((i % 100) == 0) {
+//            process.stdout.write('\n' + i + ' ');
+//        }
+//        process.stdout.write('.');
         let cname = 'data_'+entries[i].sid + '_' + entries[i].properties.name;                // build collection name
         var coll = dBase.collection(cname);                     // use this collection
 //  	console.log(entries[i]);
