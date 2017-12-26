@@ -1,19 +1,24 @@
 /**
- * Versuch, die Daten per Javascript / Node in die Mongodb einzulesen
- * Datenbank ist aufgebaut wie die alte, d.h. jeder Sensor hat eine eigene Collection !
- * Beim Schreiben muss dafür optimiert werde; beim Lesen ist das wesentlich besser
- * 
- * 	V 1.0  2010-10-31  rxf
- * 		- start
- */
-
-/* <<<<<<<<<<<<<<TODO
+ * Einlesen der laufenden Daten vom luftdate.info-Server
+ *
+ * Die Daten werden alle 5min (wenns schnell genug ist) eingelesen und in der
+ * Mongo-DB abgespeichert.
+ *
+ * Aufbau der verschiedenen Collections sie im doc-Verzeichnis
+ *
+ * Zusätzliche Funktionen:
+ * - Überprüfung der Sensoren, die in der Textdateit 'mysids.txt' liegen. Falls einer
+ *   länger als 1h nicht gesendet hat, eine mail absetzen
+ * - 1x täglich die Sensoren (d.h. die Collections), die in der Datei 'newsids_s.txt
+ *   aufgezählt sind, durchgehen und die zugehörige Adresse sowie die Höhe über NN von
+ *   Google holen und abspeichern
+ *
+ *
+ * <<<<<<<<<<<<<< TODO
     - 24h-gleitenden Mittelwert laufend mitrechnen
     - diesen immer um 0h00 (UTC !!!!) extra als Tagesmittewert abspeichern und in
       eine eigen collection eintragen
- */
-
-// Aufbau der verschiednen Ciollections sie im doc-Verzeichnis
+ **/
 
 const LIVE=true;
 
@@ -21,19 +26,20 @@ const request = require('request');
 const moment = require('moment');
 const MongoClient = require('mongodb').MongoClient;
 const fs = require('fs');
-// const lc = require('./locationcheck.js');
+const nodemailer = require('nodemailer');
 
+const ACTVE_CNT=12                     // 12 * 5min => 1 h for activity check
 
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT == undefined) { MONGOPORT =  27017; }
+if (MONGOPORT == undefined) { MONGOPORT =  27020; }
 
 const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data24h.json';	// URL to API on 'luftdaten.info'
 const SAVE_NAME = 'data/aktdata.json';  // filename for actual data
-
+const MY_SIDS = 'data/mysids.txt';      // file, where my SIDs are stored
 
 // Because of restrictions (max. 2500 rquests/day) on Google-Maps-API, we request only 2000 adrresses in one
 // batch püer day freom Google.
@@ -57,8 +63,39 @@ const defaultAddress = {
     street: 'F'
 }
 
+// create reusable transporter object using the default SMTP transport
+let transporter = nodemailer.createTransport({
+    host: 'smtp.1und1.de',
+    port: 587,
+    secure: false, // true for 465, false for other ports
+    auth: {
+        user: 'rxf@fuerst-stuttgart.de', // generated ethereal user
+        pass: 'Jup!ter4'  // generated ethereal password
+    }
+});
+
 console.log("\n\rStart: ", start.format("YYYY-MM-DD HH:mm"));
 
+/*
+let mysid =
+    [
+        { name: 'rxf', sid: 140, cnt:10 },
+        { name: 'rxf', sid: 141, cnt:10 },
+        { name: 'lothar', sid: 187, cnt:10 },
+        { name: 'lothar', sid: 188, cnt:10 },
+        { name: 'holger', sid: 789, cnt:10 },
+        { name: 'holger', sid: 790, cnt:10 },
+        { name: 'günter', sid: 1725, cnt:10 },
+        { name: 'günter', sid: 1726, cnt:10 },
+        { name: 'henny', sid: 2590, cnt:10 },
+        { name: 'henny', sid: 2591, cnt:10 },
+        { name: 'felix', sid: 7905, cnt:10 },
+        { name: 'felix', sid: 7906, cnt:10 },
+        { name: 'sternwarte', sid: 1999, cnt:10 },
+        { name: 'sternwarte', sid: 2000, cnt:10 }
+    ];
+saveDatatoFile(MY_SIDS,JSON.stringify(mysid));
+*/
 
 MongoClient.connect(MONGO_URL, function(err,db) {
     if (err) {
@@ -75,11 +112,9 @@ function startProgram() {
     if (LIVE == true) {
         doReadfromAPI();
     } else {
-        constructDBaseEntries(readDatafromFile());
+        constructDBaseEntries(readDatafromFile(SAVE_NAME));
     }
 }
-
-
 
 function doReadfromAPI() {
     request(API_URL, function(error, response, body) {
@@ -90,7 +125,7 @@ function doReadfromAPI() {
         try {
             jsBody = JSON.parse(body);
             console.log("1-Dauer read from net: ", end - start);
-            saveDatatoFile(JSON.stringify(jsBody));
+            saveDatatoFile(SAVE_NAME,JSON.stringify(jsBody));
             end1 = moment();
             console.log("1-Dauer save to Disk: ", end1 - start);
             constructDBaseEntries(jsBody);
@@ -116,96 +151,102 @@ function doReadfromAPI() {
 // var obj = objArray.find(function (obj) { return obj.id === 3; });
 
 // die Daten in eimnr Datei zwischenspeichern
-function saveDatatoFile(data) {
-    fs.writeFileSync(SAVE_NAME,data);
+function saveDatatoFile(fn,data) {
+    fs.writeFileSync(fn,data);
 }
 
 // Daten wieder vom File lesen
-function readDatafromFile() {
-    return JSON.parse(fs.readFileSync(SAVE_NAME));
+function readDatafromFile(fn) {
+    return JSON.parse(fs.readFileSync(fn));
 }
 
 
 function constructDBaseEntries(body) {
     console.log("Dauer bis Aufruf zum Parsen: ", moment() - start)
+    let mySids = readDatafromFile(MY_SIDS);
     let allValues = [];
-    let allKorrel = [];
     let st1 = moment();
-    for (let i = 0; i < body.length; i++) {                     // check all entries
-        let entry = {};
-        let val = [];                                           // is sid alredy in array
-        let idx = allValues.findIndex(function (obj) {
-            return obj.sid === body[i].sensor.id;
-        });
-        if (idx != -1) {                                        // yes
-            val = allValues[idx].values;                        // -> read current values
-        } else {                                                // no
-            allValues.push({'sid': body[i].sensor.id, 'values': val});  // -> push  sid and empty values
-            idx = allValues.length - 1;                         // adjust index
+    try {
+        for (let i = 0; i < body.length; i++) {                     // check all entries
+            let entry = {};
+            let val = [];                                           // is sid alredy in array
+            let idx = allValues.findIndex(function (obj) {
+                return obj.sid === body[i].sensor.id;
+            });
+            if (idx != -1) {                                        // yes
+                val = allValues[idx].values;                        // -> read current values
+            } else {                                                // no
+                allValues.push({'sid': body[i].sensor.id, 'values': val});  // -> push  sid and empty values
+                idx = allValues.length - 1;                         // adjust index
+                markMySids(mySids, body[i].sensor.id);               // mark 'mysids' as OK
 //            allValues[idx].properties = {};
 //            allValues[idx].properties.othersensors = [];        // init array for the other sensors on same location
-        }
-        let date = moment.utc(body[i].timestamp);               // extract date of entry
-        entry.date = date.toDate();					            // make date for Mongo (== ISODate)
-        let values = body[i].sensordatavalues;                  // fetch values
-        for (let n = 0; n < values.length; n++) {               // for all values
-            let typ = values[n].value_type;                     // extract type
-            if (typ=='P1') {typ = 'P10'};
-            if (typ=='P2') {typ = 'P2_5'};
-            let x = 0.0;                                        // bdefault for value
-            try {
-                x = parseFloat(values[n].value);                // extract value
-            } catch (err) {
-                console.log(err);
             }
-            entry[typ] = x;                                     // put typ and value into new entry
-        }
-        let x = true;                                           // set flag
-        for (let n = 0; n < val.length; n++) {                  // for all values in this entry
-            if (date.isSame(val[n].date)) {                     // if the same date is aready entered
-                delete entry.date;                              // delete it
-                for (var k in entry) {                          // and enter the typ and value
-                    val[n][k] = entry[k];
+            let date = moment.utc(body[i].timestamp);               // extract date of entry
+            entry.datetime = date.toDate();					        // make datetime for Mongo (== ISODate)
+            let values = body[i].sensordatavalues;                  // fetch values
+            for (let n = 0; n < values.length; n++) {               // for all values
+                let typ = values[n].value_type;                     // extract type
+                let x = 0.0;                                        // bdefault for value
+                try {
+                    x = parseFloat(values[n].value);                // extract value
+                } catch (err) {
+                    console.log(err);
                 }
-                ;
-                x = false;                                      // clear flag
-                break;
+                entry[typ] = x;                                     // put typ and value into new entry
             }
-        }
-        if (x == true) {                                        // if flag set (after loop)
-            val.push(entry);                                    // push the entry, else it is already entered
-        }
+            let x = true;                                           // set flag
+            for (let n = 0; n < val.length; n++) {                  // for all values in this entry
+                if (date.isSame(val[n].datetime)) {                 // if the same datetime is aready entered
+                    delete entry.datetime;                          // delete it
+                    for (var k in entry) {                          // and enter the typ and value
+                        val[n][k] = entry[k];
+                    }
+                    ;
+                    x = false;                                      // clear flag
+                    break;
+                }
+            }
+            if (x == true) {                                        // if flag set (after loop)
+                val.push(entry);                                    // push the entry, else it is already entered
+            }
 
-        allValues[idx].values = val;                            // now push all into the big array
-        let properties = {
-            sid:  body[i].sensor.id,
-            name: body[i].sensor.sensor_type.name,
-            date_since: D1900,
-            location: [{
-                loc: {
-                    type: "Point",
-                    coordinates: [checkLatLon(body[i].location.longitude), checkLatLon(body[i].location.latitude)]
-                },
-                id : body[i].location.id,
-                altitude: 0,
-                address: defaultAddress,
-                date_since: moment().toDate(),
-            }],
-            othersensors : [],
-        }
-        allValues[idx].properties = properties;
-        let fnd = allValues.findIndex(function (obj) {
-            return obj.properties.location.id === body[i].location.id;
-        });
-        if ((fnd != -1) && (fnd != idx)) {                      // same location -> korrelate (skip own sid)
-            if((allValues[fnd].properties.othersensors).indexOf(body[i].sensor.id) == -1) {  // if not already stored
-                allValues[fnd].properties.othersensors.push(body[i].sensor.id);  // enter sid
+            allValues[idx].values = val;                            // now push all into the big array
+            let properties = {
+                sid: body[i].sensor.id,
+                name: body[i].sensor.sensor_type.name,
+                date_since: D1900,
+                location: [{
+                    loc: {
+                        type: "Point",
+                        coordinates: [checkLatLon(body[i].location.longitude), checkLatLon(body[i].location.latitude)]
+                    },
+                    id: body[i].location.id,
+                    altitude: 0,
+                    address: defaultAddress,
+                    date_since: moment().toDate(),
+                }],
+                othersensors: [],
             }
-            let fndsid = allValues[fnd].sid;
-            if((allValues[idx].properties.othersensors).indexOf(fndsid) == -1) {  // if not already stored
-                allValues[idx].properties.othersensors.push(fndsid);  // enter sid
+//            console.log(properties.sid);
+            allValues[idx].properties = properties;
+            let fnd = allValues.findIndex(function (obj) {          // is current location-id in array?
+                let idx = obj.properties.location.length - 1;         // use newest location entry
+                return obj.properties.location[idx].id === body[i].location.id;
+            });
+            if ((fnd != -1) && (fnd != idx)) {                      // same location -> korrelate (skip own sid)
+                if ((allValues[fnd].properties.othersensors).indexOf(body[i].sensor.id) == -1) {  // if not already stored
+                    allValues[fnd].properties.othersensors.push(body[i].sensor.id);  // enter sid
+                }
+                let fndsid = allValues[fnd].sid;
+                if ((allValues[idx].properties.othersensors).indexOf(fndsid) == -1) {  // if not already stored
+                    allValues[idx].properties.othersensors.push(fndsid);  // enter sid
+                }
             }
         }
+    }
+    catch(xerr) {
+        console.log(xerr);
     }
     allcount = allValues.length;                                // so many elents were adde9d
 
@@ -213,6 +254,9 @@ function constructDBaseEntries(body) {
 	let los = moment();
 	console.log("Parsen dauert:", los-st1);
 
+    // check, if 'mysensor' are still alive
+    checkMySids(mySids);
+    saveDatatoFile(MY_SIDS,JSON.stringify(mySids));
 
 	doTheEntry(allValues).then(() => {
 //        let now = moment();
@@ -244,36 +288,31 @@ async function doTheEntry(entries) {
         let cname = 'data_'+entries[i].sid + '_' + entries[i].properties.name;                // build collection name
         var coll = dBase.collection(cname);                     // use this collection
 //  	console.log(entries[i]);
-        if (!collections.map(c => c.name).includes(cname)) {    // does it already exist?
-            console.log("New:",cname);                          // no -> show it it
-            inserted = await korr.insertOne( entries[i].properties);  // and save properties
-            await dBase.createCollection(cname);
-            await coll.createIndex({ date:1}, { expireAfterSeconds: 2764800});  // expire after 32 days
-        } else {                                                // collection exists
-            entries[i].values.sort(compareValues);              // sort values according to time
-            for (let j=0; j<entries[i].values.length; i++) {
-                let doc = await coll.findOne({date: entries[i].values[j].date});  // if oldest is not in DB
-                if(doc == null) {
+        try {
+            if (!collections.map(c => c.name).includes(cname)) {    // does it already exist?
+                console.log("New:", cname);                          // no -> show it it
+                inserted = await korr.insertOne(entries[i].properties);  // and save properties
+                await dBase.createCollection(cname);
+                await coll.createIndex({datetime: 1}, {expireAfterSeconds: 2764800}, {unique: true});  // expire after 32 days
+            } else {                                                // collection exists
+                try {
                     inserted = await coll.insertMany(entries[i].values);  // so save new values
                     icount += inserted.insertedCount;
-                    break;                                      // and exit loop
-                } else {                                        // if oldest is IN DB, count it
-                    dcount++;                                   // and check next
+                }
+                catch (e) {
+                    console.log(e);
+                    if(e.message.startsWith("E11000 duplicate")) {
+                        continue;
+                    } else {
+                        console.log(e, cname);
+                    }
                 }
             }
         }
+        catch(err) {
+            console.log(err);
+        }
     }
-}
-
-// Compare values array according to time
-function compareValues(a,b) {
-    if( a.date < b.date ) {
-        return -1;
-    }
-    if( a.date > b.date ) {
-        return 1
-    }
-    return 0;
 }
 
 
@@ -300,8 +339,48 @@ function minsec(msec) {
     return nullfill(min) + ':' + nullfill(sec) + ' min:sec';
 }
 
+// Check, if 'my' sensors are still alive:
+// Compare dates in read in file. If date is older than 1 hour, send out mail,
+// then store aktual dates
+// Data:
+// [{ sid,cnt}, {sid, cnt}, {}, ... ]
+function checkMySids(ms) {
+    let body = "";
+    for(let i=0; i<ms.length; i++) {
+        if (--ms[i].cnt == 0) {
+            body += "Sensor " + ms[i].sid + " von " + ms[i].name + " sendet seit einer Stunde nicht mehr\n"
+        }
+    }
+    if (body != "") {
+        console.log(body);
 
-//
+        // setup email data with unicode symbols
+        let mailOptions = {
+            from: '"Feinstaub" <rxf@fuerst-stuttgart.de>',            // sender address
+            to: 'rexfue@gmail.com',                     // list of receivers
+            subject: 'Feinstaubsensor(en) ausgefallen', // Subject line
+            text: body // plain text body
+        };
+        transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+                return console.log(error);
+            }
+        });
+    }
+}
+
+// Mark sensor in array masids as aktive
+function markMySids(mysids,sid) {
+    let idx = mysids.findIndex(function (obj) {
+        return obj.sid === sid;
+    });
+    if (idx != -1) {
+        mysids[idx].cnt = ACTVE_CNT;
+        console.log("found:", sid);
+    }
+}
+
+
 
 /*
 //https://zeit.co/blog/async-and-await
