@@ -287,7 +287,8 @@ async function doTheEntry(entries) {
 //            process.stdout.write('\n' + i + ' ');
 //        }
 //        process.stdout.write('.');
-        let cname = 'data_'+entries[i].sid + '_' + entries[i].properties.name;                // build collection name
+//        let cname = 'data_'+entries[i].sid + '_' + entries[i].properties.name;                // build collection name
+        let cname = 'data_'+entries[i].sid;                     // build collection name
         var coll = dBase.collection(cname);                     // use this collection
 //  	console.log(entries[i]);
         try {
