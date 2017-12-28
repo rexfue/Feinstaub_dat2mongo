@@ -27,6 +27,7 @@ const moment = require('moment');
 const MongoClient = require('mongodb').MongoClient;
 const fs = require('fs');
 const nodemailer = require('nodemailer');
+const reuqest = require('request');
 
 const ACTVE_CNT=12                     // 12 * 5min => 1 h for activity check
 
@@ -215,7 +216,7 @@ function constructDBaseEntries(body) {
             let properties = {
                 sid: body[i].sensor.id,
                 name: body[i].sensor.sensor_type.name,
-                date_since: D1900,
+                date_since: moment().toDate(),
                 location: [{
                     loc: {
                         type: "Point",
@@ -263,13 +264,14 @@ function constructDBaseEntries(body) {
 //        if (now.format('HH:mm') == LOCATION_TIME) {
 //            await lc.locationcheck(dBase);
 //        }
-        dBase.close();
         let gz =  moment()-los;
         console.log("Schreiben in dBase: ",  gz ,'msec  ', minsec(gz));
-        gz = moment()-start;
-        console.log("Gesamtzeit: ", gz ,'msec  ', minsec(gz));
+        let gz1 = moment()-start;
+        console.log("Gesamtzeit: ", gz1 ,'msec  ', minsec(gz1));
         console.log("icount=",icount,"  dcount=",dcount,"  allcount:",allcount);
-        console.log("All thru")
+        put2MQTT(gz,allcount);
+        console.log("All thru!  Time needed: ",minsec(moment()-start) );
+        dBase.close();
 	});
 }
 
@@ -300,8 +302,8 @@ async function doTheEntry(entries) {
                     icount += inserted.insertedCount;
                 }
                 catch (e) {
-                    console.log(e);
                     if(e.message.startsWith("E11000 duplicate")) {
+                        console.log("Duplicate:",entries[i].sid);
                         continue;
                     } else {
                         console.log(e, cname);
@@ -380,46 +382,20 @@ function markMySids(mysids,sid) {
     }
 }
 
-
-
-/*
-//https://zeit.co/blog/async-and-await
-function sleep (time) {
-  return new Promise((resolve) => setTimeout(resolve, time));
+// Put paramater to MQTT
+function put2MQTT(data1,data2) {
+    let cmd = '&field1='+data1/1000;
+    dBase.stats(function(err,erg) {
+        cmd += '&field2='+parseInt(erg.objects) + '&field3='+parseInt(erg.storageSize) + '&field4='+parseInt(allcount);
+        request.get('https://api.thingspeak.com/update?api_key=VDOH97IK7E92YT3Z'+cmd, function (err, resp, bod) {
+            if(err) {
+                console.log(err);
+            } else {
+                if(resp.statusCode == 200) {
+                    console.log("TheThings meldet: ",bod);
+                }
+            }
+        });
+    });
 }
 
-// Usage!
-sleep(500).then(() => {
-    // Do something after the sleep!
-});
-
-def addAltitude(loc):
-	""" fetch the altitude of location coordinates via Google-API """
-	try:
-		r = requests.get('https://maps.googleapis.com/maps/api/elevation/json?locations={0},{1}&key=AIzaSyBpQm2BKLtU2oxdrgy45s27ao3J1cBj64E'.format(loc[0],loc[1]))
-		places = r.json()
-		eletxt = 'At {0} elevation is: {1}'
-		print (eletxt.format(loc, places['results'][0]['elevation']))
-	except:
-		print (('Error in altitude for location: {0}').format(loc))
-		return 0
-	return round(places['results'][0]['elevation'])
-#Ende: def addAltitude(loc):
-
-
-
-def addAddress(loc):
-	""" Fetch address for location coordinates via Google-API """
-
-	try:
-		r = requests.get('https://maps.googleapis.com/maps/api/geocode/json?latlng={0},{1}&key=AIzaSyBpQm2BKLtU2oxdrgy45s27ao3J1cBj64E'.format(loc[0],loc[1]))
-		addr = r.json()
-#		print (addr)
-	except:
-		print(('Error in address for location: {0}').format(loc))
-		return ""
-	return addr['results'][0]['address_components']
-#end: def addAddress(loc):
-
-
-*/
