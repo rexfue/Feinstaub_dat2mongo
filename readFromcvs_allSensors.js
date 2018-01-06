@@ -9,7 +9,6 @@ const request = require('request');
 const moment = require('moment');
 const MongoClient = require('mongodb').MongoClient;
 const fs = require('fs');
-// const lc = require('./locationcheck.js');
 let $ = jQuery = require('jquery');
 require('./jquery.csv.js');
 
@@ -17,136 +16,120 @@ require('./jquery.csv.js');
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT === undefined) { MONGOPORT =  27020; }
+if (MONGOPORT === undefined) { MONGOPORT =  27017; }
 
 const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
 const API_URL = 'http://archive.luftdaten.info/';	            // URL to API on 'luftdaten.info'
 const NEWSID_NAME = 'data/newsids_x.txt';               // filename for new sensors
-
-// We store max. one year in our database, that means we start collecting data
-// from 2016-11-01 on
-const STARTDATE='2017-12-15';
-const NBROFDAYS=23;
 
 let dBase = null;
 let start = moment();
 let end, end1;
 let sidArray = [];
 let insertCount = 0;
-var collNames = [];
+
+let std = moment().startOf('day').subtract(1,'day');           // yeserday
+let startDate = std.format("YYYY-MM-DD");                    // Date-String for yesterday
+let numberOfDays = 1;
+
+let connect = MongoClient.connect(MONGO_URL);
 
 
-MongoClient.connect(MONGO_URL, function(err,db) {
-    if (err) {
+console.log("Start:",moment().format("YYYY-MM-DD HH:mm:ss"));
+console.log(MONGO_URL);
+
+// process the commandline arguments
+if (process.argv[2] !== undefined)
+    startDate = process.argv[2];
+if (process.argv[3] !== undefined)
+    numberOfDays = parseInt(process.argv[3]);
+
+connect
+    .then(db => {
+        return readSensorsperDay(db)
+    })
+    .then(() => {
+        console.log("\nInserted:",insertCount);
+        console.log("Ende:", moment().format("YYYY-MM-DD HH:mm:ss"));
+    })
+    .catch(err => {
         console.log(err);
         process.exit(-1);
-    }
-    dBase = db;
-    try {
-        var inp = fs.readFileSync(NEWSID_NAME);
-        sidArray = JSON.parse(inp);
-    }
-    catch (e) {
-    }
-    readSensorsperDay()
-        .then((erg) => {
-//        console.log("Jetzt sommer da", erg);
-        console.log("");
-        db.close();
     });
-});
 
-
-async function readSensorsperDay() {
-    let st = moment(STARTDATE);
-    let end = moment(STARTDATE);
-    end.add(NBROFDAYS, 'day');
-    let now = moment();
-    for (let d = st; d < end; d.add(1, 'day')) {
-        let data = await dBase.listCollections().toArray()  // read all collection names for every day
-        for (x in data) {
-            let n = data[x].name;
-//            console.log(x, n);
-            if(n.startsWith('data_')) {
-                let p = n.split('_');
-                collNames.push(p[1]);
-            }
-        }
-        start = moment();
+// do the whole work
+async function readSensorsperDay(db) {
+    let st = moment(startDate);                                 // startdate
+    let end = moment(startDate);
+    end.add(numberOfDays, 'day');                               // enddate
+    for (let d = st; d < end; d.add(1, 'day')) {                // loop thru days
         insertCount = 0;
-        console.log('\n***************', d.format('YYYY-MM-DD'));
+        console.log('\n***************', d.format('YYYY-MM-DD')); // log every day
         let mist = false;
+        // fetch sensors list of current day
         let list = await getdirlistOfOneDay(d.format('YYYY-MM-DD')).catch( error => { console.log(error); mist = true;});
-//        console.log(list);
-        if (mist) continue;
-        await enterSensors(list, d.format('YYYY-MM-DD'));
-        let gz = moment() - start;
-        console.log("\nZeit (1 Tag, "+list.length+ " Sensoren, " + insertCount + " Inserts): ",  minsec(gz));
+        if (mist) continue;                                     // if day doesn't exist, continue
+        await enterSensors(db,list, d.format('YYYY-MM-DD'));       // fetch an enter sensor data
     }
-    return new Promise((resolve, reject) => {
-        fs.writeFile(NEWSID_NAME, JSON.stringify(sidArray), function (err) {
-            if (err) {
-                reject(err);
-            } else {
-//                console.log("alle durch");
-                resolve('OK');
-            }
-        });
-    });
+    db.close();
 }
 
 
-
+// get list of all saved sensors for this day
 function getdirlistOfOneDay(day) {
     const p = new Promise((resolve, reject) => {
-        request(API_URL + day, function(error, response, body) {
+        request(API_URL + day, function(error, response, body) {    // fetch the list
 //            console.log(response.statusCode);
-            if ((response.statusCode != 200 ) || (error)) {
-                console.log(error);
-                reject(error);
+            if ((response.statusCode != 200 ) || (error)) {     // if not OK
+                console.log(error);                             // log error
+                reject(error);                                  // and return the rror
             }
-            let a = body.split('"');
+            let a = body.split('"');                            // parse the list
             let list = [];
             for (let i = 0; i < a.length; i++) {
-                if (a[i].startsWith(day.substr(0, 4))) {
+                if (a[i].startsWith(day.substr(0, 4))) {        // extract the sensor names
                     list.push(a[i]);
                 }
             }
-            resolve(list);
+            resolve(list);                                      // and return th elist
         });
     });
     return p;
 }
 
-async function enterSensors(list,dt) {
-    for (let i=0; i< list.length; i++) {
-        let icount = await putOneSensorInDb(list[i],dt);
-        if ((i % 100) == 0) {
-            process.stdout.write('\n' + i + ' ');
+
+// Iterate thru the list and enter every sensor data into db
+async function enterSensors(db,list,dt) {
+//    for (let i=0; i< list.length; i++) {                        // iterate the list
+    for (let i=0; i< list.length; i++) {                        // iterate the list
+        let icount = await putOneSensorInDb(db,list[i],dt);        // put one sensor data inti DB
+        if ((i % 100) == 0) {                                   // write dots to ...
+            process.stdout.write('\n' + ('000'+i).slice(-4) + ' ');  // show activity
         }
-        process.stdout.write('.');
-        insertCount += icount;
-//        console.log('Inserted:',icount);
+        insertCount += icount;                                  // add nbr of inserts
+        process.stdout.write(insertCount+' ');
     }
 }
 
 
-async function putOneSensorInDb(name,dt) {
+// read CSV file and enter data
+async function putOneSensorInDb(db,name,dt) {
     let erg = await readOneSensorOneDay(name, dt)
-    return await enterOneSensorinDB(name, dt,erg);
+    return await enterOneSensorinDB(db,name, dt,erg);
 }
 
 
+// read the CSV-File and parse it int right format for DB
 function readOneSensorOneDay(name, dt) {
     const p = new Promise((resolve, reject) => {
-        let url = API_URL + dt + '/' + name;
+        let url = API_URL + dt + '/' + name;                    // construct URL
         let sid = name.split("_")[3].replace('.csv', '');
-        let sidName = name.split("_")[1].toUpperCase();
-        request(url, function (error, response, body) {
-            if (response.statusCode != 200) {
-                reject("Error", error);
+        request(url, function (error, response, body) {         // request the file
+            if((error) || (response.statusCode != 200)) {
+                console.log("error readOneSeinsorOneDay:", error);
+                reject("Error", error);                         // if not OK, reject
             }
-            $.csv.toObjects(body, {separator: ';'}, function (err, data) {
+            $.csv.toObjects(body, {separator: ';'}, function (err, data) {  // parse CSV
 //                console.log("Lang: ", data.length);
                 let all = [];
                 for (var i = 0; i < data.length; i++) {
@@ -170,7 +153,7 @@ function readOneSensorOneDay(name, dt) {
                     }
                     all.push(entry)
                 }
-                resolve({ all:all, sid:sid, name:sidName });
+                resolve({ all:all, sid:sid });                  // return all the data
             });
         });
     });
@@ -179,28 +162,31 @@ function readOneSensorOneDay(name, dt) {
 
 
 
-
-async function enterOneSensorinDB(name,dt,erg) {
+// enter all data for one sensor into DB
+async function enterOneSensorinDB(db,name,dt,erg) {
     let sid = erg.sid;
     let all = erg.all;
+    if(sid == '374') {
+        console.log(sid);
+    }
+    let inserted = {insertedCount: 0};
     try {
-        let collName = 'data_' + sid + '_' + erg.name;
-        let coll = dBase.collection(collName);
-        if (!collNames.map(c => c).includes(sid)) {                // does it already exist?
-            console.log('New Sensor:', sid);
-            putSIDinArray(sid);
-            await dBase.createCollection(collName);                 // no -> cretate collectiom
-            await coll.createIndex({datetime: 1}, {expireAfterSeconds: 2764800})  // expire after 400 days
-            let inserted = await coll.insertMany(all)       // then inser values
-            return(inserted.count);
+        let collName = 'data_' + sid;                           // build collection name
+        let coll = db.collection(collName);
+        let ret = await coll.findOne();                         // does it exist?
+        if(ret == null) {
+            console.log('New Sensor:', sid);                    // no
+            await db.createCollection(collName);             // create collectiom
+            await coll.createIndex({datetime: 1}, {expireAfterSeconds: 2764800}, {unique: true});  // expire after 32 days
+            inserted = await coll.insertMany(all)           // then insert values
+            return(inserted.insertedCount);
         } else {
-            let std = moment.utc(dt);
-            let endd = moment.utc(dt);
-            endd.add(1, 'day');
+            let std = moment.utc(dt).startOf('day');
+            let endd = moment.utc(dt).startOf('day').add(1,'day');
             let docs = await coll.find({datetime: {$gte: new Date(std), $lt: new Date(endd)}}, {sort: {datetime: 1}}).toArray();
             for (let i = docs.length - 1; i >= 0; i--) {
+                let dt = docs[i].datetime.valueOf();
                 for (let a = all.length - 1; a >= 0; a--) {
-                    let dt = docs[i].datetime.valueOf();
                     let at = all[a].datetime.valueOf();
                     if (dt == at) {
                         all.splice(a, 1);
@@ -209,31 +195,20 @@ async function enterOneSensorinDB(name,dt,erg) {
                 }
             }
             if (all.length > 0) {
-                let inserted = {count: 0};
                 inserted = await coll.insertMany(all)              // if collection already existes
-                return(inserted.count);
-            } else {
-                return(0);
             }
         }
     }
     catch(e) {
         console.log(e);
     }
+    return(inserted.insertedCount);
 }
 
-
-
-// Put name of sensor into sidsArray
-function putSIDinArray(sid) {
-    if (sidArray.indexOf(sid) == -1) {
-        sidArray.push(sid);
-    }
-}
 
 // Vorne 0 hinschreiben, wenn n < 10 ist
 function nullfill(n) {
-    return (n < 10) ? ('0' + n) : n;
+    return (n < 10) ? ('0' + n) : ''+n;
 }
 
 // Umrechnen der msec in minuten und Sekunden und als String zurückgeben
@@ -245,57 +220,3 @@ function minsec(msec) {
 }
 
 
-
-// getdirlistOfOneDay("2016-11-41").then((dl) => {
-//    console.log(dl);
-//}
-//);
-
-/*
-var sample = '../data/sample.csv';
-fs.readFile(sample, 'UTF-8', function(err, csv) {
-    $.csv.toObjects(csv, {separator:';'}, function(err, data) {
-
-        console.log("Lang: ", data.length);
-        let all = [];
-        for (var i=0; i<data.length; i++) {
-            entry = {};
-            entry.datetime = data[i].timestamp;
-            entry.P10 = data[i].P1;
-            entry.P2_5 = data[i].P2;
-            all.push(entry)
-        }
-// Hier est checken, ob die collection schon existiert. Wenn nein, dann das prop ertsellen
-// und eintragen (damit den datensatz erzeugen). Falls ja, das Erstellen des prop übergehen
-
-// ****** wie das mit den othersensors hin bekommen ???????  *****************
-
-
-        let prop = { properties: {
-            name: data[0].sensor_type,
-            since_date: '1900-01-01',
-            location: {
-                longitude: data[0].lon,
-                latitude: data[0].lat,
-                altitude: 0,                            // Adresse und altitude von Google erfragen !!!!!
-                since_date: '1900-01-01',
-                address: {
-                    street: 'Forststr. 66a',
-                    plz: 70176,
-                    city: 'Stuttgart',
-                    country: 'Germany'
-                }
-            }
-        }};
-
-// hier dann das komplette (!!) array 'all' mit bulkinsert (inseret_many) eintragen
-
-
-        console.log(all);
-    });
-});
-
-
-
-// Die Daten des 5min-Abhiolens sehen ja ganz anders aus, sind also auch anders zu behandeln (siehe D2M-Projekt)
-*/

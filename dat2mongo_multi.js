@@ -34,13 +34,15 @@ const ACTVE_CNT=12                     // 12 * 5min => 1 h for activity check
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT == undefined) { MONGOPORT =  27020; }
+if (MONGOPORT == undefined) { MONGOPORT =  27017; }
 
 const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data24h.json';	// URL to API on 'luftdaten.info'
 const SAVE_NAME = 'data/aktdata.json';  // filename for actual data
 const MY_SIDS = 'data/mysids.txt';      // file, where my SIDs are stored
+const PROP_COLL='properties';
+const MAP_COLL='mapdata';
 
 // Because of restrictions (max. 2500 rquests/day) on Google-Maps-API, we request only 2000 adrresses in one
 // batch püer day freom Google.
@@ -137,12 +139,13 @@ function doReadfromAPI() {
                 try {
                     jsBody = JSON.parse(body);
                     console.log("2-Dauer read from net: ", end - start);
-                    saveDatatoFile(JSON.stringify(jsBody));
+                    saveDatatoFile(SAVE_NAME,JSON.stringify(jsBody));
                     end1 = moment();
                     console.log("2-Dauer save to Disk: ", end1 - start);
                     constructDBaseEntries(jsBody);
                 } catch (err) {
                     console.log(err)
+                    process.exit(-1);
                 }
             });
         }
@@ -170,16 +173,18 @@ function constructDBaseEntries(body) {
     try {
         for (let i = 0; i < body.length; i++) {                     // check all entries
             let entry = {};
-            let val = [];                                           // is sid alredy in array
-            let idx = allValues.findIndex(function (obj) {
-                return obj.sid === body[i].sensor.id;
+            let val = [];
+            let sid = body[i].sensor.id;
+            let sname = body[i].sensor.sensor_type.name;
+            let idx = allValues.findIndex(function (obj) {          // is sid alredy in array
+                return obj.sid === sid;
             });
             if (idx != -1) {                                        // yes
                 val = allValues[idx].values;                        // -> read current values
             } else {                                                // no
-                allValues.push({'sid': body[i].sensor.id, 'values': val});  // -> push  sid and empty values
+                allValues.push({'sid': sid, 'values': val});        // -> push  sid and empty values
                 idx = allValues.length - 1;                         // adjust index
-                markMySids(mySids, body[i].sensor.id);               // mark 'mysids' as OK
+                markMySids(mySids, sid);                            // mark 'mysids' as OK
 //            allValues[idx].properties = {};
 //            allValues[idx].properties.othersensors = [];        // init array for the other sensors on same location
             }
@@ -214,8 +219,8 @@ function constructDBaseEntries(body) {
 
             allValues[idx].values = val;                            // now push all into the big array
             let properties = {
-                sid: body[i].sensor.id,
-                name: body[i].sensor.sensor_type.name,
+                sid: sid,
+                name: sname,
                 date_since: moment().toDate(),
                 location: [{
                     loc: {
@@ -232,16 +237,19 @@ function constructDBaseEntries(body) {
 //            console.log(properties.sid);
             allValues[idx].properties = properties;
             let fnd = allValues.findIndex(function (obj) {          // is current location-id in array?
-                let idx = obj.properties.location.length - 1;         // use newest location entry
+                let idx = obj.properties.location.length - 1;       // use newest location entry
                 return obj.properties.location[idx].id === body[i].location.id;
             });
             if ((fnd != -1) && (fnd != idx)) {                      // same location -> korrelate (skip own sid)
-                if ((allValues[fnd].properties.othersensors).indexOf(body[i].sensor.id) == -1) {  // if not already stored
-                    allValues[fnd].properties.othersensors.push(body[i].sensor.id);  // enter sid
+                if(!allValues[fnd].properties.othersensors.map(x => x.id).includes(sid)) {
+//                if ((allValues[fnd].properties.othersensors).indexOf(body[i].sensor.id) == -1) {  // if not already stored
+                    allValues[fnd].properties.othersensors.push(
+                        {'id':sid, 'name':sname});  // enter sid and name
                 }
                 let fndsid = allValues[fnd].sid;
-                if ((allValues[idx].properties.othersensors).indexOf(fndsid) == -1) {  // if not already stored
-                    allValues[idx].properties.othersensors.push(fndsid);  // enter sid
+                if(!allValues[idx].properties.othersensors.map(x => x.id).includes(fndsid)) {
+//                if ((allValues[idx].properties.othersensors).indexOf(fndsid) == -1) {  // if not already stored
+                    allValues[idx].properties.othersensors.push({'id': fndsid, 'name': allValues[fnd].properties.name});  // enter sid and name
                 }
             }
         }
@@ -250,7 +258,11 @@ function constructDBaseEntries(body) {
         console.log(xerr);
     }
     allcount = allValues.length;                                // so many elents were adde9d
+/*
+            if (!collections.map(c => c.name).includes(cname)) {    // does it already exist?
+                console.log("New:", cname);                          // no -> show it it
 
+ */
 //	console.log(allValues);
 	let los = moment();
 	console.log("Parsen dauert:", los-st1);
@@ -259,7 +271,11 @@ function constructDBaseEntries(body) {
     checkMySids(mySids);
     saveDatatoFile(MY_SIDS,JSON.stringify(mySids));
 
-	doTheEntry(allValues).then(() => {
+	doTheEntry(allValues)
+        .then(() => {
+                return doMapEntry(allValues);
+            })
+        .then(() => {
 //        let now = moment();
 //        if (now.format('HH:mm') == LOCATION_TIME) {
 //            await lc.locationcheck(dBase);
@@ -279,15 +295,9 @@ function constructDBaseEntries(body) {
 async function doTheEntry(entries) {
     const collections = await dBase.listCollections().toArray();    // read all collection names
     let inserted = 0;                                           // count number of inserted records
-    let korr = dBase.collection('properties');
+    let korr = dBase.collection(PROP_COLL);
     console.log("Einträge gesamt:",entries.length);
     for (let i=0; i< entries.length; i++) {                     // loop through all entries
-//        let cname = entries[i].sid + '_current';                // build collection name
-//        if ((i % 100) == 0) {
-//            process.stdout.write('\n' + i + ' ');
-//        }
-//        process.stdout.write('.');
-//        let cname = 'data_'+entries[i].sid + '_' + entries[i].properties.name;                // build collection name
         let cname = 'data_'+entries[i].sid;                     // build collection name
         var coll = dBase.collection(cname);                     // use this collection
 //  	console.log(entries[i]);
@@ -319,6 +329,32 @@ async function doTheEntry(entries) {
 }
 
 
+async function doMapEntry(entries) {
+    let mapcoll = dBase.collection(MAP_COLL);
+    await mapcoll.drop();                                       // remover collection
+    await dBase.createCollection(MAP_COLL);
+    await mapcoll.createIndex({location: "2dsphere"});      // and on Location
+
+    for (x in entries) {                     // loop through all entries
+        let one = entries[x];
+        try {
+            let toEnter = {};
+            if('P1' in one.values[0]) {
+                toEnter.values = one.values[one.values.length - 1];
+                toEnter._id = one.sid;
+                toEnter.location = one.properties.location[one.properties.location.length - 1].loc;
+
+                let inserted = await mapcoll.insertOne(toEnter);
+//                console.log(inserted.insertedCount);
+            }
+        }
+        catch(e) {
+            console.log("doMapEntry: ", one.sid, e);
+        }
+    }
+
+}
+
 // Check lat/lon and convert to float
 function checkLatLon(w) {
     if ((w == null) || (w == "")) {
@@ -343,7 +379,7 @@ function minsec(msec) {
 }
 
 // Check, if 'my' sensors are still alive:
-// Compare dates in read in file. If date is older than 1 hour, send out mail,
+// Compare dates in read-in file. If date is older than 1 hour, send out mail,
 // then store aktual dates
 // Data:
 // [{ sid,cnt}, {sid, cnt}, {}, ... ]
@@ -383,7 +419,7 @@ function markMySids(mysids,sid) {
     }
 }
 
-// Put paramater to MQTT
+// Put paramater to MQTT (Thingspeak)
 function put2MQTT(data1,data2) {
     let cmd = '&field1='+data1/1000;
     dBase.stats(function(err,erg) {

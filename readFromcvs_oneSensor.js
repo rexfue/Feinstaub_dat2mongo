@@ -31,7 +31,7 @@ const NEWSID_NAME = 'data/newsids_x.txt';               // filename for new sens
 
 // We store max. one year in our database, that means we start collecting data
 // from 2016-11-01 on
-const STARTDATE='2017-10-01';
+const STARTDATE='2017-12-26';
 const NBROFDAYS=30;
 const SID=140;
 const URL_PART="_sds011_sensor_140.csv";
@@ -70,11 +70,11 @@ async function readSensorsperDay() {
     let end = moment(STARTDATE);
     end.add(NBROFDAYS, 'day');
     let now = moment();
-    for (let d = st; d < end; d.add(1, 'day')) {
-        let cnt = await enterSensor(d.format('YYYY-MM-DD'));
+//    for (let d = st; d < end; d.add(1, 'day')) {
+        let cnt = await enterSensor(st.format('YYYY-MM-DD'));
         let gz = moment() - start;
         console.log("\nZeit (1 Tag, "+ cnt + " Inserts): ",  minsec(gz));
-    }
+//    }
     return new Promise((resolve, reject) => {
         fs.writeFile(NEWSID_NAME, JSON.stringify(sidArray), function (err) {
             if (err) {
@@ -142,7 +142,7 @@ async function enterOneSensorinDB(dt,erg) {
     let sid = erg.sid;
     let all = erg.all;
     try {
-        let collName = 'data_' + sid + '_' + erg.name;
+        let collName = 'data_' + sid;
         let coll = dBase.collection(collName);
 //        if (!collNames.map(c => c).includes(sid)) {                // does it already exist?
 //            console.log('New Sensor:', sid);
