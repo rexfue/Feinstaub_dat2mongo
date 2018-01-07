@@ -107,7 +107,7 @@ async function enterSensors(db,list,dt) {
             process.stdout.write('\n' + ('000'+i).slice(-4) + ' ');  // show activity
         }
         insertCount += icount;                                  // add nbr of inserts
-        process.stdout.write(insertCount+' ');
+        process.stdout.write(icount+' ');
     }
 }
 
