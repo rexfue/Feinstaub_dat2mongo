@@ -36,9 +36,9 @@ let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
 if (MONGOPORT == undefined) { MONGOPORT =  27017; }
 
-const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
+const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_24';  	// URL to mongo database
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
-const API24_URL = 'https://api.luftdaten.info/static/v2/data24h.json';	// URL to API on 'luftdaten.info'
+const API24_URL = 'https://api.luftdaten.info/static/v2/data.24h.json';	// URL to API on 'luftdaten.info'
 const SAVE_NAME = 'data/aktdata.json';  // filename for actual data
 const MY_SIDS = 'data/mysids.txt';      // file, where my SIDs are stored
 const PROP_COLL='properties';
@@ -66,6 +66,7 @@ const defaultAddress = {
     street: 'F'
 }
 
+/*
 // create reusable transporter object using the default SMTP transport
 let transporter = nodemailer.createTransport({
     host: 'smtp.1und1.de',
@@ -76,6 +77,7 @@ let transporter = nodemailer.createTransport({
         pass: 'Jup!ter4'  // generated ethereal password
     }
 });
+*/
 
 console.log("\n\rStart: ", start.format("YYYY-MM-DD HH:mm"));
 
@@ -120,7 +122,7 @@ function startProgram() {
 }
 
 function doReadfromAPI() {
-    request(API_URL, function(error, response, body) {
+    request(API24_URL, function(error, response, body) {
         let jsBody;
         console.log('error:', error); // Print the error if one occurred
         console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
@@ -133,7 +135,7 @@ function doReadfromAPI() {
             console.log("1-Dauer save to Disk: ", end1 - start);
             constructDBaseEntries(jsBody);
         } catch (err) {
-            request(API_URL, function (error, response, body) {
+            request(API24_URL, function (error, response, body) {
                 console.log('error:', error); // Print the error if one occurred
                 console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
                 try {
@@ -167,7 +169,7 @@ function readDatafromFile(fn) {
 
 function constructDBaseEntries(body) {
     console.log("Dauer bis Aufruf zum Parsen: ", moment() - start)
-    let mySids = readDatafromFile(MY_SIDS);
+//    let mySids = readDatafromFile(MY_SIDS);
     let allValues = [];
     let st1 = moment();
     try {
@@ -184,7 +186,7 @@ function constructDBaseEntries(body) {
             } else {                                                // no
                 allValues.push({'sid': sid, 'values': val});        // -> push  sid and empty values
                 idx = allValues.length - 1;                         // adjust index
-                markMySids(mySids, sid);                            // mark 'mysids' as OK
+//              markMySids(mySids, sid);                            // mark 'mysids' as OK
 //            allValues[idx].properties = {};
 //            allValues[idx].properties.othersensors = [];        // init array for the other sensors on same location
             }
@@ -268,13 +270,13 @@ function constructDBaseEntries(body) {
 	console.log("Parsen dauert:", los-st1);
 
     // check, if 'mysensor' are still alive
-    checkMySids(mySids);
-    saveDatatoFile(MY_SIDS,JSON.stringify(mySids));
+//    checkMySids(mySids);
+//    saveDatatoFile(MY_SIDS,JSON.stringify(mySids));
 
 	doTheEntry(allValues)
-        .then(() => {
-                return doMapEntry(allValues);
-            })
+//        .then(() => {
+//                return doMapEntry(allValues);
+//            })
         .then(() => {
 //        let now = moment();
 //        if (now.format('HH:mm') == LOCATION_TIME) {
@@ -285,7 +287,7 @@ function constructDBaseEntries(body) {
         let gz1 = moment()-start;
         console.log("Gesamtzeit: ", gz1 ,'msec  ', minsec(gz1));
         console.log("icount=",icount,"  dcount=",dcount,"  allcount:",allcount);
-        put2MQTT(gz,allcount);
+//        put2MQTT(gz,allcount);
         console.log("All thru!  Time needed: ",minsec(moment()-start) );
         dBase.close();
 	});
@@ -298,17 +300,13 @@ async function doTheEntry(entries) {
     let korr = dBase.collection(PROP_COLL);
     console.log("Einträge gesamt:",entries.length);
     for (let i=0; i< entries.length; i++) {                     // loop through all entries
-        let cursid = entries[i].sid;                            // extract current SID
-        let cname = 'data_'+cursid;                             // build collection name
+        let cname = 'data_'+entries[i].sid;                     // build collection name
         var coll = dBase.collection(cname);                     // use this collection
 //  	console.log(entries[i]);
         try {
-            if (!collections.map(c => c.name).includes(cname)) {  // does it already exist in collections?
-                console.log("New:", cname);                     // no -> show it it
-                const doc = korr.findOne({_id:cursid});         // does it exist in properties?
-                if(doc == null) {                               //
-                    inserted = await korr.insertOne(entries[i].properties);  // no, then save properties
-                }
+            if (!collections.map(c => c.name).includes(cname)) {    // does it already exist?
+                console.log("New:", cname);                          // no -> show it it
+                inserted = await korr.insertOne(entries[i].properties);  // and save properties
                 await dBase.createCollection(cname);
                 await coll.createIndex({datetime: 1}, {expireAfterSeconds: 2764800}, {unique: true});  // expire after 32 days
             } else {                                                // collection exists
@@ -318,8 +316,7 @@ async function doTheEntry(entries) {
                 }
                 catch (e) {
                     if(e.message.startsWith("E11000 duplicate")) {
-//                        console.log("Duplicate:",entries[i].sid);
-                        dcount++;
+                        console.log("Duplicate:",entries[i].sid);
                         continue;
                     } else {
                         console.log(e, cname);
@@ -333,7 +330,7 @@ async function doTheEntry(entries) {
     }
 }
 
-
+/*
 async function doMapEntry(entries) {
     let mapcoll = dBase.collection(MAP_COLL);
     await mapcoll.drop();                                       // remover collection
@@ -359,6 +356,7 @@ async function doMapEntry(entries) {
     }
 
 }
+*/
 
 // Check lat/lon and convert to float
 function checkLatLon(w) {
@@ -383,6 +381,7 @@ function minsec(msec) {
     return nullfill(min) + ':' + nullfill(sec) + ' min:sec';
 }
 
+/*
 // Check, if 'my' sensors are still alive:
 // Compare dates in read-in file. If date is older than 1 hour, send out mail,
 // then store aktual dates
@@ -424,6 +423,8 @@ function markMySids(mysids,sid) {
     }
 }
 
+
+
 // Put paramater to MQTT (Thingspeak)
 function put2MQTT(data1,data2) {
     let cmd = '&field1='+data1/1000;
@@ -441,3 +442,4 @@ function put2MQTT(data1,data2) {
     });
 }
 
+*/

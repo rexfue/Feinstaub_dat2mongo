@@ -20,13 +20,14 @@ if (MONGOPORT === undefined) { MONGOPORT =  27017; }
 
 const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
 const API_URL = 'http://archive.luftdaten.info/';	            // URL to API on 'luftdaten.info'
-const NEWSID_NAME = 'data/newsids_x.txt';               // filename for new sensors
 
 let dBase = null;
 let start = moment();
 let end, end1;
 let sidArray = [];
 let insertCount = 0;
+let dupCount=0;
+let insertedSIDs=0;
 
 let std = moment().startOf('day').subtract(1,'day');           // yeserday
 let startDate = std.format("YYYY-MM-DD");                    // Date-String for yesterday
@@ -49,7 +50,7 @@ connect
         return readSensorsperDay(db)
     })
     .then(() => {
-        console.log("\nInserted:",insertCount);
+        console.log("\nInserted:",insertCount, 'Doppelte:',dupCount);
         console.log("Ende:", moment().format("YYYY-MM-DD HH:mm:ss"));
     })
     .catch(err => {
@@ -64,7 +65,7 @@ async function readSensorsperDay(db) {
     end.add(numberOfDays, 'day');                               // enddate
     for (let d = st; d < end; d.add(1, 'day')) {                // loop thru days
         insertCount = 0;
-        console.log('\n***************', d.format('YYYY-MM-DD')); // log every day
+        console.log('\n***************', d.format('YYYY-MM-DD\n')); // log every day
         let mist = false;
         // fetch sensors list of current day
         let list = await getdirlistOfOneDay(d.format('YYYY-MM-DD')).catch( error => { console.log(error); mist = true;});
@@ -101,13 +102,12 @@ function getdirlistOfOneDay(day) {
 // Iterate thru the list and enter every sensor data into db
 async function enterSensors(db,list,dt) {
 //    for (let i=0; i< list.length; i++) {                        // iterate the list
-    for (let i=0; i< list.length; i++) {                        // iterate the list
-        let icount = await putOneSensorInDb(db,list[i],dt);        // put one sensor data inti DB
-        if ((i % 100) == 0) {                                   // write dots to ...
-            process.stdout.write('\n' + ('000'+i).slice(-4) + ' ');  // show activity
+    for (let i=0; i< list.length; i++) {                            // iterate the list
+        let icount = await putOneSensorInDb(db,list[i],dt);         // put one sensor data inti DB
+        if ((i % 50) == 0) {                                       // write dots to ...
+            process.stdout.write('.');                             // show activity
         }
         insertCount += icount;                                  // add nbr of inserts
-        process.stdout.write(icount+' ');
     }
 }
 
@@ -126,7 +126,7 @@ function readOneSensorOneDay(name, dt) {
         let sid = name.split("_")[3].replace('.csv', '');
         request(url, function (error, response, body) {         // request the file
             if((error) || (response.statusCode != 200)) {
-                console.log("error readOneSeinsorOneDay:", error);
+                console.log("error readOneSensorOneDay:", error);
                 reject("Error", error);                         // if not OK, reject
             }
             $.csv.toObjects(body, {separator: ';'}, function (err, data) {  // parse CSV
@@ -166,9 +166,6 @@ function readOneSensorOneDay(name, dt) {
 async function enterOneSensorinDB(db,name,dt,erg) {
     let sid = erg.sid;
     let all = erg.all;
-    if(sid == '374') {
-        console.log(sid);
-    }
     let inserted = {insertedCount: 0};
     try {
         let collName = 'data_' + sid;                           // build collection name
@@ -200,7 +197,13 @@ async function enterOneSensorinDB(db,name,dt,erg) {
         }
     }
     catch(e) {
-        console.log(e);
+        if(e.message.startsWith("E11000 duplicate")) {
+//                        console.log("Duplicate:",entries[i].sid);
+            dupCount++;
+            continue;
+        } else {
+            console.log(e, sid);
+        }
     }
     return(inserted.insertedCount);
 }
