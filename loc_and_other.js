@@ -87,7 +87,7 @@ function constructDBaseEntries(body) {
                 continue;                                           // -> skip to next
             } else {                                                // no
                 let properties = {
-                    sid: sid,
+                    _id: sid,
                     name: sname,
                     date_since: moment().toDate(),
                     location: [{
@@ -145,11 +145,11 @@ async function checkAll(db,data) {
     for (let x in allprops) {                                       // loop thru every entry
         try {
             let prop = allprops[x];                                 // get one entry
-//            console.log(prop.sid);
+//            console.log(prop._id);
             let coll = db.collection(PROP_COLL);
-            let entry = await coll.findOne({sid: prop.sid});        // fetch data from dbase for this sensor
+            let entry = await coll.findOne({_id: prop._id});        // fetch data from dbase for this sensor
             if (entry == null) {                                    // sensor isn't in DB
-                console.log("New entry: ", prop.sid);
+                console.log("New entry: ", prop._id);
                 let latlng = [prop.location[0].loc.coordinates[1], prop.location[0].loc.coordinates[0]];
                 prop.location[0].address = await fetchAddress(latlng);      // fetch address
                 prop.location[0].altitude = await fetchAltitude(latlng);    // and altitude for thet location
@@ -166,24 +166,24 @@ async function checkAll(db,data) {
                         entry.location[nbr].address = addr;
                         entry.location[nbr].altitude = altitude;
                         doUpdate = true;
-                        console.log(prop.sid,entry.location[nbr].address);
+                        console.log(prop._id,entry.location[nbr].address);
                     }
                 }
                 if (doUpdate) {
                     let ln = {};
                     ln['location.' + nbr] = entry.location[nbr];
-                    let updated = await coll.updateOne({sid: prop.sid}, {$set: ln});
-                    console.log('Updated_Address:', prop.sid, updated.result.n);
+                    let updated = await coll.updateOne({_id: prop._id}, {$set: ln});
+                    console.log('Updated_Address:', prop._id, updated.result.n);
                 }
                 if (prop.othersensors.length != entry.othersensors.length) {
-                    let updated = await coll.updateOne({sid: prop.sid}, {$set: {othersensors: prop.othersensors}});
-                    console.log('Updated_Other:', prop.sid, updated.result.n);
+                    let updated = await coll.updateOne({_id: prop._id}, {$set: {othersensors: prop.othersensors}});
+                    console.log('Updated_Other:', prop._id, updated.result.n);
                 } else {
                     for (let x in prop.othersensors) {
                         let onb = prop.othersensors[x];
                         if (entry.othersensors.indexOf(onb) == -1) {
-                            let updated = await coll.updateOne({sid: prop.sid}, {$push: {othersensors: onb}});
-                            console.log('Updated_Push_Other:', prop.sid, updated.result.n);
+                            let updated = await coll.updateOne({_id: prop._id}, {$push: {othersensors: onb}});
+                            console.log('Updated_Push_Other:', prop._id, updated.result.n);
                         }
                     }
                 }
