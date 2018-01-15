@@ -192,15 +192,28 @@ async function enterOneSensorinDB(db,name,dt,erg) {
                 }
             }
             if (all.length > 0) {
-                inserted = await coll.insertMany(all)              // if collection already existes
+                for (let i in all) {
+                    try {
+                        inserted = await coll.insertOne(all[i])
+                    }
+                    catch(e) {
+                        if(e.message.startsWith("E11000 duplicate")) {
+                            console.log("Duplicate:",sid);
+                            dupCount++;
+                            continue;
+                        } else {
+                            console.log(e, sid);
+                        }
+                    }
+                }
             }
         }
     }
     catch(e) {
         if(e.message.startsWith("E11000 duplicate")) {
-//                        console.log("Duplicate:",entries[i].sid);
+            console.log("Duplicate:",sid);
             dupCount++;
-            continue;
+            return 0
         } else {
             console.log(e, sid);
         }

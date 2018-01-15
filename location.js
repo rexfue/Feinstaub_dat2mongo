@@ -38,6 +38,7 @@ const defaultAddress = {
     street: 'F'
 }
 
+let doGoogle = true;
 
 
 console.log("\n\rStart: ", moment().format("YYYY-MM-DD HH:mm:ss"));
@@ -79,9 +80,12 @@ function constructDBaseEntries(body) {
     try {
         for (let i = 0, j=0; i < body.length; i++) {                     // check all entries
             let sid = body[i].sensor.id;
+//            if (sid == 141) {
+//                console.log("sid", sid);
+//            }
             let sname = body[i].sensor.sensor_type.name;
             let idx = allValues.findIndex(function (obj) {          // is sid alredy in array
-                return obj.sid === sid;
+                return obj._id === sid;
             });
             if (idx != -1) {                                        // yes
                 continue;                                           // -> skip to next
@@ -111,7 +115,7 @@ function constructDBaseEntries(body) {
                     if ((allValues[fnd].othersensors).indexOf(body[i].sensor.id) == -1) {  // if not already stored
                         allValues[fnd].othersensors.push(sid);           // enter sid
                     }
-                    let fndsid = allValues[fnd].sid;
+                    let fndsid = allValues[fnd]._id;
                     if ((allValues[j].othersensors).indexOf(fndsid) == -1) {  // if not already stored
                         allValues[j].othersensors.push(fndsid);                 // enter sid
                     }
@@ -142,15 +146,92 @@ function checkLatLon(w) {
 
 async function checkAll(db,data) {
     let allprops = constructDBaseEntries(data);                     // construct all entries from the actual datafile
+    let coll = db.collection(PROP_COLL);
     for (let x in allprops) {                                       // loop thru every entry
         try {
             let prop = allprops[x];                                 // get one entry
-//            console.log(prop._id);
-            let coll = db.collection(PROP_COLL);
+//            if(prop._id == 140) {
+//                console.log("hier mit:" , prop._id);
+//            }
             let entry = await coll.findOne({_id: prop._id});        // fetch data from dbase for this sensor
+            if (entry == null) continue;                              // ignore, if not there
+
+            // check other sensors
+            if (prop.othersensors.length != entry.othersensors.length) {
+                let updated = await coll.updateOne({_id: prop._id}, {$set: {othersensors: prop.othersensors}});
+                console.log('Updated_Other:', prop._id, updated.result.n);
+            } else {
+                for (let x in prop.othersensors) {
+                    let onb = prop.othersensors[x];
+                    if (entry.othersensors.indexOf(onb) == -1) {
+                        let updated = await coll.updateOne({_id: prop._id}, {$push: {othersensors: onb}});
+                        console.log('Updated_Push_Other:', prop._id, updated.result.n);
+                    }
+                }
+            }
+
+            // fetch address and altitude from Google
+            if (doGoogle) {                                          // Google OK?
+                let nbr = entry.location.length - 1;
+                if (entry.location[nbr].address.number == 'NA') {
+                    let aa = await fetchFromGoogle(prop);            // yes, then fetch
+                    if (aa.error != 'OK') {
+                        console.log(aa.error);
+                        if (aa.error == "OVER_QUERY_LIMIT") {        // Goggle sends an Error?
+                            doGoogle = false;                        // yes-> stop futher fetches
+                        }
+                        continue;                                    // and skip
+                    }
+                    entry.location[nbr].address = aa.address;
+                    entry.location[nbr].altitude = aa.altitude;
+                    console.log(prop._id, entry.location[nbr].address);
+                    let ln = {};
+                    ln['location.' + nbr] = entry.location[nbr];
+                    let updated = await coll.updateOne({_id: prop._id}, {$set: ln});
+                    console.log('Updated_Address:', prop._id, updated.result.n);
+                }
+            }
+        }
+        catch(err) {
+            console.log(err);
+        }
+    }
+}
+
+
+
+/*
+
+
+            let latlng = [prop.location[0].loc.coordinates[1], prop.location[0].loc.coordinates[0]];
+
+            }
+
+
+
+
+
+
+
+
+            if (doGoogle) {
+
+            }
+
+
+
+
+            let altitude = 0;
+            let addr = await fetchAddress(latlng);                 // fetch address
+            if(addr.number== "OVER_QUERY_LIMIT") {
+                doGoogle = false;
+            } else {
+                altitude = await fetchAltitude(latlng);            // and altitude for thet location
+            }
+
+
             if (entry == null) {                                    // sensor isn't in DB
                 console.log("New entry: ", prop._id);
-                let latlng = [prop.location[0].loc.coordinates[1], prop.location[0].loc.coordinates[0]];
                 prop.location[0].address = await fetchAddress(latlng);      // fetch address
                 prop.location[0].altitude = await fetchAltitude(latlng);    // and altitude for thet location
                 console.log(prop.location[0].address);
@@ -161,8 +242,10 @@ async function checkAll(db,data) {
                 if (entry.location[nbr].address.number == 'NA') {
                     let latlng = [prop.location[0].loc.coordinates[1], prop.location[0].loc.coordinates[0]];
                     let addr = await fetchAddress(latlng);                 // fetch address
+                    if(addr.number== "OVER_QUERY_LIMIT") {
+                        doGoogle = false;
+                    }
                     if(addr.number != 'NA') {
-                        let altitude = await fetchAltitude(latlng);            // and altitude for thet location
                         entry.location[nbr].address = addr;
                         entry.location[nbr].altitude = altitude;
                         doUpdate = true;
@@ -175,24 +258,23 @@ async function checkAll(db,data) {
                     let updated = await coll.updateOne({_id: prop._id}, {$set: ln});
                     console.log('Updated_Address:', prop._id, updated.result.n);
                 }
-                if (prop.othersensors.length != entry.othersensors.length) {
-                    let updated = await coll.updateOne({_id: prop._id}, {$set: {othersensors: prop.othersensors}});
-                    console.log('Updated_Other:', prop._id, updated.result.n);
-                } else {
-                    for (let x in prop.othersensors) {
-                        let onb = prop.othersensors[x];
-                        if (entry.othersensors.indexOf(onb) == -1) {
-                            let updated = await coll.updateOne({_id: prop._id}, {$push: {othersensors: onb}});
-                            console.log('Updated_Push_Other:', prop._id, updated.result.n);
-                        }
-                    }
-                }
             }
         }
         catch(err) {
             console.log(err);
         }
     }
+}
+*/
+
+async function fetchFromGoogle(prop) {
+    let latlng = [prop.location[0].loc.coordinates[1], prop.location[0].loc.coordinates[0]];
+    let addr = await fetchAddress(latlng);
+    if (addr.error != "OK") {
+        return { error: addr.error};
+    }
+    let alt = await fetchAltitude(latlng);
+    return { address: addr.addr, altitude: alt, error: addr.error};
 }
 
 
@@ -233,42 +315,34 @@ function fetchAddress(koord) {
             //            console.log(jsBody);
             if (jsBody == undefined) {
                 console.log('fetchAddress: jsBody undefined', rq);
-                reject("jsbody undef: ", rq);
+                resolve({error:"UNDEFINED"});
             }
-            if (jsBody.status == "OVER_QUERY_LIMIT") {
-                console.log('Google meldet: "OVER_QUERY_LIMIT"  ****> ABBRUCH');
-                process.exit(-1);
+            if(jsBody.status != 'OK') {
+                resolve({error : jsBody.status});
             }
-            if (jsBody.status == "ZERO_RESULTS") {
-                toInsert.number = 'NA';
-                resolve(toInsert);
-            }
-//                console.log("Result:", jsBody.results[0]);
-            if (jsBody.status == 'OK') {
-                let addr = jsBody.results[0].address_components;
-                if (addr != "") {
-                    for (let i = 0; i < addr.length; i++) {
-                        if (addr[i].types[0] == 'street_number') {
-                            toInsert.number = addr[i].short_name;
-                        }
-                        if (addr[i].types[0] == 'route') {
-                            toInsert.street = addr[i].short_name;
-                        }
-                        if (addr[i].types[0] == 'locality') {
-                            toInsert.city = addr[i].long_name;
-                        }
-                        if (addr[i].types[0] == 'country') {
-                            toInsert.country = addr[i].short_name;
-                        }
-                        if (addr[i].types[0] == 'political') {
-                            toInsert.region = addr[i].short_name;
-                        }
-                        if (addr[i].types[0] == 'postal_code') {
-                            toInsert.plz = Math.floor(addr[i].short_name);
-                        }
+            let addr = jsBody.results[0].address_components;
+            if (addr != "") {
+                for (let i = 0; i < addr.length; i++) {
+                    if (addr[i].types[0] == 'street_number') {
+                        toInsert.number = addr[i].short_name;
                     }
-                    resolve(toInsert);
+                    if (addr[i].types[0] == 'route') {
+                        toInsert.street = addr[i].short_name;
+                    }
+                    if (addr[i].types[0] == 'locality') {
+                        toInsert.city = addr[i].long_name;
+                    }
+                    if (addr[i].types[0] == 'country') {
+                        toInsert.country = addr[i].short_name;
+                    }
+                    if (addr[i].types[0] == 'political') {
+                        toInsert.region = addr[i].short_name;
+                    }
+                    if (addr[i].types[0] == 'postal_code') {
+                        toInsert.plz = Math.floor(addr[i].short_name);
+                    }
                 }
+                resolve({ addr: toInsert, error: 'OK'});
             }
         });
         } catch (err) {

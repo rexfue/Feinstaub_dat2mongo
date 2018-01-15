@@ -305,15 +305,16 @@ async function doTheEntry(entries) {
         try {
             if (!collections.map(c => c.name).includes(cname)) {  // does it already exist in collections?
                 console.log("New:", cname);                     // no -> show it it
-                const doc = korr.findOne({_id:cursid});         // does it exist in properties?
-                if(doc == null) {                               //
-                    inserted = await korr.insertOne(entries[i].properties);  // no, then save properties
-                }
-                await dBase.createCollection(cname);
-                await coll.createIndex({datetime: 1}, {expireAfterSeconds: 2764800}, {unique: true});  // expire after 32 days
-            } else {                                                // collection exists
+                await dBase.createCollection(cname);            // create collection
+                // and set TTL Index to 32 days
+                await coll.createIndex({datetime: 1}, {expireAfterSeconds: 2764800}, {unique: true});
+            } else {                                            // collection exists
                 try {
-                    inserted = await coll.insertMany(entries[i].values);  // so save new values
+                    const doc = korr.findOne({_id:cursid});      // does it exist in properties?
+                    if(doc == null) {
+                        await korr.insertOne(entries[i].properties);  // no, then save properties
+                    }
+                    inserted = await coll.insertMany(entries[i].values);  // save new values in collection
                     icount += inserted.insertedCount;
                 }
                 catch (e) {
@@ -429,7 +430,7 @@ function put2MQTT(data1,data2) {
     let cmd = '&field1='+data1/1000;
     dBase.stats(function(err,erg) {
         cmd += '&field2='+parseInt(erg.objects) + '&field3='+parseInt(erg.storageSize) + '&field4='+parseInt(allcount);
-        request.get('https://api.thingspeak.com/update?api_key=VDOH97IK7E92YT3Z'+cmd, function (err, resp, bod) {
+        request.get('https://api.thingspeak.com/update?api_key=KYJCU4ERHDW8E4W2'+cmd, function (err, resp, bod) {
             if(err) {
                 console.log(err);
             } else {
