@@ -1,0 +1,22 @@
+{
+  "name": "d2mongo",
+  "version": "2.0.0",
+  "date": "2018-01-18",
+  "description": "",
+  "main": "dat2mongo_multi.js",
+  "directories": {
+    "doc": "doc"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "ssh://GitServer/volume1/homes/git/GitDepot/D2mongo.git"
+  },
+  "author": "rxf@gmail.com",
+  "license": "ISC",
+  "dependencies": {
+    "nodemailer": "^4.4.1"
+  }
+}
