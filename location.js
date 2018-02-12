@@ -157,7 +157,7 @@ async function checkAll(db,data) {
             if (entry == null) continue;                              // ignore, if not there
 
             // check other sensors
-            if (prop.othersensors.length != entry.othersensors.length) {
+            if (prop.othersensors.length > entry.othersensors.length) {
                 let updated = await coll.updateOne({_id: prop._id}, {$set: {othersensors: prop.othersensors}});
                 console.log('Updated_Other:', prop._id, updated.result.n);
             } else {

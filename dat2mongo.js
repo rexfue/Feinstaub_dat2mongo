@@ -310,7 +310,7 @@ async function doTheEntry(entries) {
                 await coll.createIndex({datetime: 1}, {expireAfterSeconds: 2764800}, {unique: true});
             } else {                                            // collection exists
                 try {
-                    const doc = korr.findOne({_id:cursid});      // does it exist in properties?
+                    const doc = await korr.findOne({_id:cursid});      // does it exist in properties?
                     if(doc == null) {
                         await korr.insertOne(entries[i].properties);  // no, then save properties
                     }
