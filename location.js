@@ -1,9 +1,9 @@
 /** locationcheck.js            rxf     2017-12-11
 
-    Check the collection 'propertiesn' for location and othersensor entries.
-    Compare with the file 'currentdata.txt', which will be stored once a day
-    direktly from tha luftdaten data.
-    Enter all missing data into the collection
+    Check the collection 'properties' for location and othersensor entries.
+    Compare with the file 'data/aktdata.json', which will be stored every 5 min
+    direktly from 'https://api.luftdaten.info/static/v1/data.json'.
+    Enter all missing data into the collection.
  */
 
 const request = require('request');
@@ -84,7 +84,7 @@ function constructDBaseEntries(body) {
 //                console.log("sid", sid);
 //            }
             let sname = body[i].sensor.sensor_type.name;
-            let idx = allValues.findIndex(function (obj) {          // is sid alredy in array
+            let idx = allValues.findIndex(function (obj) {          // is sid alredy in array allValues
                 return obj._id === sid;
             });
             if (idx != -1) {                                        // yes
@@ -100,7 +100,7 @@ function constructDBaseEntries(body) {
                             coordinates: [checkLatLon(body[i].location.longitude), checkLatLon(body[i].location.latitude)]
                         },
                         id: body[i].location.id,
-                        altitude: 0,
+                        altitude: body[i].location.altitude,
                         address: defaultAddress,
                         date_since: moment().toDate(),
                     }],
@@ -150,7 +150,7 @@ async function checkAll(db,data) {
     for (let x in allprops) {                                       // loop thru every entry
         try {
             let prop = allprops[x];                                 // get one entry
-//            if(prop._id == 140) {
+//            if(prop._id == 10199) {
 //                console.log("hier mit:" , prop._id);
 //            }
             let entry = await coll.findOne({_id: prop._id});        // fetch data from dbase for this sensor
@@ -170,9 +170,19 @@ async function checkAll(db,data) {
                 }
             }
 
+            // if local stored coordinates are 10/51 then overwrite with coordinates from aktdata.json
+            let nbr = entry.location.length - 1;
+            if ((entry.location[nbr].loc.coordinates[0] == 10) && (entry.location[nbr].loc.coordinates[1] == 51)) {
+                entry.location[nbr].loc.coordinates = prop.location[0].loc.coordinates;
+                let ln = {};
+                ln['location.' + nbr] = entry.location[nbr];
+                let updated = await coll.updateOne({_id: prop._id}, {$set: ln});
+                console.log('Updated_Coordinates:', prop._id, updated.result.n);
+            }
+
+
             // fetch address and altitude from Google
             if (doGoogle) {                                          // Google OK?
-                let nbr = entry.location.length - 1;
                 if (entry.location[nbr].address.number == 'NA') {
                     let aa = await fetchFromGoogle(prop);            // yes, then fetch
                     if (aa.error != 'OK') {
@@ -183,7 +193,7 @@ async function checkAll(db,data) {
                         continue;                                    // and skip
                     }
                     entry.location[nbr].address = aa.address;
-                    entry.location[nbr].altitude = aa.altitude;
+//                    entry.location[nbr].altitude = aa.altitude;
                     console.log(prop._id, entry.location[nbr].address);
                     let ln = {};
                     ln['location.' + nbr] = entry.location[nbr];
@@ -273,7 +283,8 @@ async function fetchFromGoogle(prop) {
     if (addr.error != "OK") {
         return { error: addr.error};
     }
-    let alt = await fetchAltitude(latlng);
+//    let alt = await fetchAltitude(latlng);
+    let alt = 0;
     return { address: addr.addr, altitude: alt, error: addr.error};
 }
 

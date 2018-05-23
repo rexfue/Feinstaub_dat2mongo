@@ -9,6 +9,7 @@
 // *****************************************************
 
 
+
 const LIVE=true;
 
 const request = require('request');
@@ -23,7 +24,7 @@ require('./jquery.csv.js');
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT === undefined) { MONGOPORT =  27018; }
+if (MONGOPORT === undefined) { MONGOPORT =  27019; }
 
 const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
 const API_URL = 'http://archive.luftdaten.info/';	            // URL to API on 'luftdaten.info'

@@ -337,7 +337,11 @@ async function doTheEntry(entries) {
 
 async function doMapEntry(entries) {
     let mapcoll = dBase.collection(MAP_COLL);
-    await mapcoll.drop();                                       // remover collection
+    try {
+        await mapcoll.drop();  // remover collection
+    }
+    catch(e) {
+    }
     await dBase.createCollection(MAP_COLL);
     await mapcoll.createIndex({location: "2dsphere"});      // and on Location
 
