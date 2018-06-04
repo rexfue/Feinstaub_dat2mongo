@@ -36,9 +36,10 @@ let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
 if (MONGOPORT == undefined) { MONGOPORT =  27017; }
 
+// const MONGO_URL = 'mongodb://rxf:5C5dB|m@' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
 const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
-const API24_URL = 'https://api.luftdaten.info/static/v2/data24h.json';	// URL to API on 'luftdaten.info'
+const API24_URL = 'https://api.luftdaten.info/static/v2/data.24h.json';	// URL to API on 'luftdaten.info'
 const SAVE_NAME = 'data/aktdata.json';  // filename for actual data
 const MY_SIDS = 'data/mysids.txt';      // file, where my SIDs are stored
 const PROP_COLL='properties';
@@ -431,10 +432,11 @@ function markMySids(mysids,sid) {
 
 // Put paramater to MQTT (Thingspeak)
 function put2MQTT(data1,data2) {
+	let KEY = process.env.TTS_KEY;
     let cmd = '&field1='+data1/1000;
     dBase.stats(function(err,erg) {
         cmd += '&field2='+parseInt(erg.objects) + '&field3='+parseInt(erg.storageSize) + '&field4='+parseInt(allcount);
-        request.get('https://api.thingspeak.com/update?api_key=KYJCU4ERHDW8E4W2'+cmd, function (err, resp, bod) {
+        request.get('https://api.thingspeak.com/update?api_key='+KEY+cmd, function (err, resp, bod) {
             if(err) {
                 console.log(err);
             } else {
