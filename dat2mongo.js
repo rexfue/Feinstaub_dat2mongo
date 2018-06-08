@@ -308,7 +308,7 @@ async function doTheEntry(entries) {
                 console.log("New:", cname);                     // no -> show it it
                 await dBase.createCollection(cname);            // create collection
                 // and set TTL Index to 32 days
-                await coll.createIndex({datetime: 1}, {expireAfterSeconds: 2764800}, {unique: true});
+                await coll.createIndex({datetime: 1}, {expireAfterSeconds: 32832000});  // 380 Tage
             } else {                                            // collection exists
                 try {
                     const doc = await korr.findOne({_id:cursid});      // does it exist in properties?

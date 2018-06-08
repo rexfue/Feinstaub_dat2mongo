@@ -174,7 +174,7 @@ async function enterOneSensorinDB(db,name,dt,erg) {
         if(ret == null) {
             console.log('New Sensor:', sid);                    // no
             await db.createCollection(collName);             // create collectiom
-            await coll.createIndex({datetime: 1}, {expireAfterSeconds: 2764800}, {unique: true});  // expire after 32 days
+            await coll.createIndex({datetime: 1}, {expireAfterSeconds: 32832000});  // expire after 32 days
             inserted = await coll.insertMany(all)           // then insert values
             return(inserted.insertedCount);
         } else {
