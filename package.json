@@ -17,6 +17,10 @@
   "author": "rxf@gmail.com",
   "license": "ISC",
   "dependencies": {
-    "nodemailer": "^4.4.1"
+    "nodemailer": "^4.4.1",
+    "moment": "^2.20.1",
+    "mongodb": "^2.2.33",
+    "jquery": "^3.3.1",
+    "request": "^2.83.0"
   }
 }
