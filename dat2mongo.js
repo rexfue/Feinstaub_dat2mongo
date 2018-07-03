@@ -29,15 +29,21 @@ const fs = require('fs');
 const nodemailer = require('nodemailer');
 const reuqest = require('request');
 
-const ACTVE_CNT=12                     // 12 * 5min => 1 h for activity check
+const ACTVE_CNT=12;                     // 12 * 5min => 1 h for activity check
 
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
-if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT == undefined) { MONGOPORT =  27017; }
+let MONGOAUTH = process.env.MONGOAUTH;
+let MONGOUSRP = process.env.MONGOUSRP;
 
-// const MONGO_URL = 'mongodb://rxf:5C5dB|m@' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
-const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
+if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
+if (MONGOPORT === undefined) { MONGOPORT =  27017; }
+if (MONGOAUTH === undefined) { MONGOAUTH =  'false'; }
+
+let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
+if (MONGOAUTH == 'true') {
+    MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/Feinstaubi_A';          // URL to mongo database
+}
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data.24h.json';	// URL to API on 'luftdaten.info'
 const SAVE_NAME = 'data/aktdata.json';  // filename for actual data
@@ -65,7 +71,7 @@ const defaultAddress = {
     country: 'DE',
     plz: NaN,
     street: 'F'
-}
+};
 
 // create reusable transporter object using the default SMTP transport
 let transporter = nodemailer.createTransport({
@@ -145,7 +151,7 @@ function doReadfromAPI() {
                     console.log("2-Dauer save to Disk: ", end1 - start);
                     constructDBaseEntries(jsBody);
                 } catch (err) {
-                    console.log(err)
+                    console.log(err);
                     process.exit(-1);
                 }
             });
@@ -167,7 +173,7 @@ function readDatafromFile(fn) {
 
 
 function constructDBaseEntries(body) {
-    console.log("Dauer bis Aufruf zum Parsen: ", moment() - start)
+    console.log("Dauer bis Aufruf zum Parsen: ", moment() - start);
     let mySids = readDatafromFile(MY_SIDS);
     let allValues = [];
     let st1 = moment();
@@ -209,7 +215,6 @@ function constructDBaseEntries(body) {
                     for (var k in entry) {                          // and enter the typ and value
                         val[n][k] = entry[k];
                     }
-                    ;
                     x = false;                                      // clear flag
                     break;
                 }
@@ -229,12 +234,12 @@ function constructDBaseEntries(body) {
                         coordinates: [checkLatLon(body[i].location.longitude), checkLatLon(body[i].location.latitude)]
                     },
                     id: body[i].location.id,
-                    altitude: 0,
+                    altitude: checkAltitude(body[i].location),
                     address: defaultAddress,
                     date_since: moment().toDate(),
                 }],
                 othersensors: [],
-            }
+            };
 //            console.log(properties.sid);
             allValues[idx].properties = properties;
             let fnd = allValues.findIndex(function (obj) {          // is current location-id in array?
@@ -266,6 +271,7 @@ function constructDBaseEntries(body) {
  */
 //	console.log(allValues);
 	let los = moment();
+	let maptim;
 	console.log("Parsen dauert:", los-st1);
 
     // check, if 'mysensor' are still alive
@@ -274,14 +280,17 @@ function constructDBaseEntries(body) {
 
 	doTheEntry(allValues)
         .then(() => {
+                maptim = moment();
                 return doMapEntry(allValues);
             })
         .then(() => {
 //        let now = moment();
+
 //        if (now.format('HH:mm') == LOCATION_TIME) {
 //            await lc.locationcheck(dBase);
 //        }
         let gz =  moment()-los;
+        console.log("Map Schreiben: ",moment()-maptim);
         console.log("Schreiben in dBase: ",  gz ,'msec  ', minsec(gz));
         let gz1 = moment()-start;
         console.log("Gesamtzeit: ", gz1 ,'msec  ', minsec(gz1));
@@ -311,8 +320,8 @@ async function doTheEntry(entries) {
                 await coll.createIndex({datetime: 1}, {expireAfterSeconds: 32832000});  // 380 Tage
             } else {                                            // collection exists
                 try {
-                    const doc = await korr.findOne({_id:cursid});      // does it exist in properties?
-                    if(doc == null) {
+                    const doc = await korr.findOne({_id: cursid});      // does it exist in properties?
+                    if (doc == null) {
                         await korr.insertOne(entries[i].properties);  // no, then save properties
                     }
                     inserted = await coll.insertMany(entries[i].values);  // save new values in collection
@@ -322,7 +331,7 @@ async function doTheEntry(entries) {
                     if(e.message.startsWith("E11000 duplicate")) {
 //                        console.log("Duplicate:",entries[i].sid);
                         dcount++;
-                        continue;
+
                     } else {
                         console.log(e, cname);
                     }
@@ -350,7 +359,7 @@ async function doMapEntry(entries) {
         let one = entries[x];
         try {
             let toEnter = {};
-            if('P1' in one.values[0]) {
+            if(('P1' in one.values[0]) || ('P2' in one.values[0])) {
                 toEnter.values = one.values[one.values.length - 1];
                 toEnter._id = one.sid;
                 toEnter.location = one.properties.location[one.properties.location.length - 1].loc;
@@ -372,6 +381,15 @@ function checkLatLon(w) {
         return 0.0;
     } else {
         return parseFloat(w);
+    }
+}
+
+// Check, if altitude is ther. If so, use it, else use 0
+function checkAltitude(loc) {
+    if(loc.altitude == undefined) {
+        return 0;
+    } else {
+        return parseFloat(loc.altitude);
     }
 }
 
