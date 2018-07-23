@@ -19,10 +19,18 @@ const GOOGLE_ADDRESS='https://maps.googleapis.com/maps/api/geocode/json?latlng='
 
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
-if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT == undefined) { MONGOPORT =  27017; }
-const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
-const PROP_COLL = 'properties'
+let MONGOAUTH = process.env.MONGOAUTH;
+let MONGOUSRP = process.env.MONGOUSRP;
+
+if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
+if (MONGOPORT === undefined) { MONGOPORT =  27017; }
+if (MONGOAUTH === undefined) { MONGOAUTH =  'false'; }
+
+let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
+if (MONGOAUTH == 'true') {
+    MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/Feinstaubi_A';          // URL to mongo database
+}
+const PROP_COLL = 'properties';
 
 const FILE1 = 'data/aktdata.json';
 const connect = MongoClient.connect(MONGO_URL);
@@ -36,7 +44,7 @@ const defaultAddress = {
     country: 'DE',
     plz: NaN,
     street: 'F'
-}
+};
 
 let doGoogle = true;
 
@@ -88,7 +96,7 @@ function constructDBaseEntries(body) {
                 return obj._id === sid;
             });
             if (idx != -1) {                                        // yes
-                continue;                                           // -> skip to next
+                                                           // -> skip to next
             } else {                                                // no
                 let properties = {
                     _id: sid,
@@ -105,7 +113,7 @@ function constructDBaseEntries(body) {
                         date_since: moment().toDate(),
                     }],
                     othersensors: [],
-                }
+                };
                 allValues[j] = properties;
                 let fnd = allValues.findIndex(function (obj) {          // is current location-id in array?
                     let idx = obj.location.length - 1;       // use newest location entry
@@ -326,10 +334,10 @@ function fetchAddress(koord) {
             //            console.log(jsBody);
             if (jsBody == undefined) {
                 console.log('fetchAddress: jsBody undefined', rq);
-                resolve({error:"UNDEFINED"});
+                return resolve({error:"UNDEFINED"});
             }
             if(jsBody.status != 'OK') {
-                resolve({error : jsBody.status});
+                return resolve({error : jsBody.status});
             }
             let addr = jsBody.results[0].address_components;
             if (addr != "") {

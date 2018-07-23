@@ -15,6 +15,7 @@ const LIVE=true;
 const request = require('request');
 const moment = require('moment');
 const MongoClient = require('mongodb').MongoClient;
+const mathe = require('mathjs');
 const fs = require('fs');
 let $ = jQuery = require('jquery');
 require('./jquery.csv.js');
@@ -25,7 +26,7 @@ let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
 if (MONGOPORT === undefined) { MONGOPORT =  27017; }
 
-const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/db24avg';  	// URL to mongo database
+const MONGO_URL = 'mongodb://rxf:5C5dB|m@' + MONGOHOST +':'+MONGOPORT+'/db24avg';  	// URL to mongo database
 const API_URL = 'http://archive.luftdaten.info/';	            // URL to API on 'luftdaten.info'
 
 let dBase = null;
@@ -42,6 +43,9 @@ let numberOfDays = 1;
 
 let connect = MongoClient.connect(MONGO_URL);
 
+let readone_T = [];
+let enterDB_T = [];
+let gesamt_T = moment();
 
 console.log("Start:",moment().format("YYYY-MM-DD HH:mm:ss"));
 console.log(MONGO_URL);
@@ -57,7 +61,7 @@ connect
         return readSensorsperDay(db)
     })
     .then(() => {
-        console.log("\nInserted:",insertCount, 'Doppelte:',dupCount);
+        console.log("Von "+startDate+ " bis " + moment(startDate).add(numberOfDays,'day') );
         console.log("Ende:", moment().format("YYYY-MM-DD HH:mm:ss"));
     })
     .catch(err => {
@@ -73,11 +77,17 @@ async function readSensorsperDay(db) {
     for (let d = st; d < end; d.add(1, 'day')) {                // loop thru days
         insertCount = 0;
         console.log('\n***************', d.format('YYYY-MM-DD\n')); // log every day
+        let st_T = moment();
         let mist = false;
         // fetch sensors list of current day
         let list = await getdirlistOfOneDay(d.format('YYYY-MM-DD')).catch( error => { console.log(error); mist = true;});
         if (mist) continue;                                     // if day doesn't exist, continue
         await enterSensors(db,list, d.format('YYYY-MM-DD'));       // fetch and enter sensor data
+        console.log("\nInserted:",insertCount, 'Doppelte:',dupCount, 'Datum:',d.format('YYYY-MM-DD\n'));
+        console.log("Durchschnitt Lesen   eines Sensors:", mathe.mean(readone_T));
+        console.log("Durchschnitt Eintrag eines Sensors:", mathe.mean(enterDB_T));
+        let tegs = moment()-st_T;
+        console.log("Gesamtzeit:", moment.duration(tegs).asMinutes(),'min');
     }
     db.close();
 }
@@ -88,9 +98,9 @@ function getdirlistOfOneDay(day) {
     const p = new Promise((resolve, reject) => {
         request(API_URL + day, function(error, response, body) {    // fetch the list
 //            console.log(response.statusCode);
-            if ((response.statusCode != 200 ) || (error)) {     // if not OK
+            if ((response.statusCode != 200 ) || (error) || (body == "")) {     // if not OK
                 console.log(error);                             // log error
-                reject(error);                                  // and return the rror
+                return reject(error);                                  // and return the rror
             }
             let a = body.split('"');                            // parse the list
             let list = [];
@@ -114,79 +124,101 @@ async function enterSensors(db,list,dt) {
         if ((i % 50) == 0) {                                       // write dots to ...
             process.stdout.write('.');                             // show activity
         }
-        insertCount += icount;                                  // add nbr of inserts
+        if (icount != undefined) {
+            insertCount += icount;                                  // add nbr of inserts
+        }
+//        console.log(insertCount);
     }
 }
 
 
 // read CSV file and enter data
 async function putOneSensorInDb(db,name,dt) {
-    let erg = await readOneSensorOneDay(name, dt)
-//    return await enterOneSensorinDB(db,name, dt,erg);
-    return 0;
+    let erg;
+    let s1 = moment();
+    try {
+        erg = await readOneSensorOneDay(name, dt);
+        readone_T.push(moment()-s1);
+        return await enterOneSensorinDB(db, name, dt, erg);
+//        return 0;
+    }
+    catch(err) {
+        console.log("Error in putOneSensorInDB()");
+    }
 }
 
+function findMinMaxAvg(arr,typ) {
+    let min = parseFloat(arr[0][typ]),
+        max = parseFloat(arr[0][typ]),
+        sum = parseFloat(arr[0][typ]),
+        cnt = 0;
 
-// read the CSV-File and parse it int right format for DB
+    for (let i = 1, len=arr.length; i < len; i++) {
+        let v = parseFloat(arr[i][typ]);
+        sum += v; cnt++;
+        min = (v < min) ? v : min;
+        max = (v > max) ? v : max;
+    }
+    let avg = 0;
+    if (cnt != 0) { avg = sum/cnt; }
+    return [min, max, avg, cnt];
+}
+
+// read the CSV-File and parse it into right format for DB
 function readOneSensorOneDay(name, dt) {
     const p = new Promise((resolve, reject) => {
         let url = API_URL + dt + '/' + name;                    // construct URL
         let sid = name.split("_")[3].replace('.csv', '');
         request(url, function (error, response, body) {         // request the file
-            if((error) || (response.statusCode != 200)) {
-                console.log("error readOneSensorOneDay:", error);
-                reject("Error", error);                         // if not OK, reject
+            if((error) || (response.statusCode != 200) || (body == "")) {
+                console.log("\nerror:",error, " readOneSensorOneDay at url:", url);
+                return reject("Error", error);                         // if not OK, reject
             }
             $.csv.toObjects(body, {separator: ';'}, function (err, data) {  // parse CSV
 //                console.log("Lang: ", data.length);
-                let entry = {};
-                entry.date = moment(dt).toDate();
-                entry.p1avg=0; entry.p1max=0; entry.p1cnt=0;
-                entry.p2avg=0; entry.p2max=0; entry.p2cnt=0;
-                entry.teavg=0; entry.temax=0; entry.temin=9999; entry.tecnt=0;
-                entry.huavg=0; entry.humax=0; entry.humin=9999; entry.hucnt=0;
-                entry.pravg=0; entry.prmax=0; entry.prmin=9999; entry.prcnt=0;
-                for (var i = 0; i < data.length; i++) {
-                    if (data[i].P1 !== undefined) {
-                        let x = parseFloat(data[i].P1);
-                        entry.p1avg += x;
-                        entry.p1cnt++;
-                        if(entry.p1max < x) { entry.p1max = x;}
-                    }
-                    if (data[i].P2 !== undefined) {
-                        let x = parseFloat(data[i].P2);
-                        entry.p2avg += x;
-                        entry.p2cnt++;
-                        if(entry.p2max < x) { entry.p2max = x;}
-                    }
-                    if (data[i].temperature !== undefined) {
-                        let x = parseFloat(data[i].temperature);
-                        entry.teavg += x;
-                        entry.tecnt++;
-                        if(entry.temax < x) { entry.temax = x;}
-                        if(entry.temin > x) { entry.temin = x;}
-                    }
-                    if (data[i].humidity !== undefined) {
-                        let x = parseFloat(data[i].humidity);
-                        entry.huavg += x;
-                        entry.hucnt++;
-                        if(entry.humax < x) { entry.humax = x;}
-                        if(entry.humin > x) { entry.humin = x;}
-                    }
-                    if (data[i].pressure !== undefined) {
-                        let x = parseFloat(data[i].pressure);
-                        entry.pravg += x;
-                        entry.prcnt++;
-                        if(entry.prmax < x) { entry.prmax = x;}
-                        if(entry.prmin > x) { entry.prmin = x;}
-                    }
+                if(data.length == 0) {
+                    console.log("\nNo data vor url:",url);
+                    return reject("Error", "No Data");
                 }
-                entry.p1avg = entry.p1avg / entry.p1cnt;
-                entry.p2avg = entry.p2avg / entry.p2cnt;
-                entry.teavg = entry.teavg / entry.tecnt;
-                entry.huavg = entry.huavg / entry.hucnt;
-                entry.pravg = entry.pravg / entry.prcnt;
-                resolve({ all:entry, sid:sid });                  // return all the data
+                let entry = {};
+                let arr = [];
+                entry.date = moment(dt).toDate();
+                if (data[0].P1 != undefined) {
+                    arr = findMinMaxAvg(data,'P1');
+                    entry.p1min = arr[0];
+                    entry.p1max = arr[1];
+                    entry.p1avg=  arr[2];
+                    entry.p1cnt = arr[3];
+                }
+                if (data[0].P2 != undefined) {
+                    arr = findMinMaxAvg(data,'P2');
+                    entry.p2min = arr[0];
+                    entry.p2max = arr[1];
+                    entry.p2avg=  arr[2];
+                    entry.p2cnt = arr[3];
+                }
+                if (data[0].temperature != undefined) {
+                    arr = findMinMaxAvg(data,'temperature');
+                    entry.temin = arr[0];
+                    entry.temax = arr[1];
+                    entry.teavg=  arr[2];
+                    entry.tecnt = arr[3];
+                }
+                if (data[0].humidity != undefined) {
+                    arr = findMinMaxAvg(data,'humidity');
+                    entry.humin = arr[0];
+                    entry.humax = arr[1];
+                    entry.huavg=  arr[2];
+                    entry.hucnt = arr[3];
+                }
+                if (data[0].pressure != undefined) {
+                    arr = findMinMaxAvg(data,'pressure');
+                    entry.prmin = arr[0];
+                    entry.prmax = arr[1];
+                    entry.pravg=  arr[2];
+                    entry.prcnt = arr[3];
+                }
+                resolve({ all:entry, sid:sid});                  // return all the data
             });
         });
     });
@@ -197,75 +229,45 @@ function readOneSensorOneDay(name, dt) {
 
 // enter all data for one sensor into DB
 async function enterOneSensorinDB(db,name,dt,erg) {
+    let s1 = moment();
     let sid = erg.sid;
     let all = erg.all;
     let inserted = {insertedCount: 0};
     try {
-        let collName = 'data_' + sid;                           // build collection name
+        let collName = 'd24_' + sid;                           // build collection name
         let coll = db.collection(collName);
         let ret = await coll.findOne();                         // does it exist?
         if(ret == null) {
             console.log('New Sensor:', sid);                    // no
-            await db.createCollection(collName);             // create collectiom
-            await coll.createIndex({datetime: 1}, {expireAfterSeconds: 2764800}, {unique: true});  // expire after 32 days
-            inserted = await coll.insertMany(all)           // then insert values
+            await db.createCollection(collName);                // create collectiom
+            await coll.createIndex({date: 1},{unique:true});
+            inserted = await coll.insertOne(all);               // then insert values
             return(inserted.insertedCount);
         } else {
-            let std = moment.utc(dt).startOf('day');
-            let endd = moment.utc(dt).startOf('day').add(1,'day');
-            let docs = await coll.find({datetime: {$gte: new Date(std), $lt: new Date(endd)}}, {sort: {datetime: 1}}).toArray();
-            for (let i = docs.length - 1; i >= 0; i--) {
-                let dt = docs[i].datetime.valueOf();
-                for (let a = all.length - 1; a >= 0; a--) {
-                    let at = all[a].datetime.valueOf();
-                    if (dt == at) {
-                        all.splice(a, 1);
-                        break;
-                    }
-                }
-            }
-            if (all.length > 0) {
-                for (let i in all) {
                     try {
-                        inserted = await coll.insertOne(all[i])
+                        inserted = await coll.insertOne(all)
                     }
                     catch(e) {
                         if(e.message.startsWith("E11000 duplicate")) {
                             console.log("Duplicate:",sid);
                             dupCount++;
-                            continue;
                         } else {
                             console.log(e, sid);
                         }
+                        return 0;
                     }
                 }
             }
-        }
-    }
     catch(e) {
         if(e.message.startsWith("E11000 duplicate")) {
             console.log("Duplicate:",sid);
             dupCount++;
-            return 0
         } else {
             console.log(e, sid);
         }
+        return 0;
     }
+    enterDB_T.push(moment()-s1);
     return(inserted.insertedCount);
 }
-
-
-// Vorne 0 hinschreiben, wenn n < 10 ist
-function nullfill(n) {
-    return (n < 10) ? ('0' + n) : ''+n;
-}
-
-// Umrechnen der msec in minuten und Sekunden und als String zurückgeben
-function minsec(msec) {
-    let min = Math.floor((msec/60000));
-    msec -= min*60000;
-    let sec = (msec/1000).toFixed(2);
-    return nullfill(min) + ':' + nullfill(sec) + ' min:sec';
-}
-
 

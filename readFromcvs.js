@@ -15,10 +15,17 @@ require('./jquery.csv.js');
 
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
+let MONGOAUTH = process.env.MONGOAUTH;
+let MONGOUSRP = process.env.MONGOUSRP;
+
 if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
 if (MONGOPORT === undefined) { MONGOPORT =  27017; }
+if (MONGOAUTH === undefined) { MONGOAUTH =  'false'; }
 
-const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
+let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
+if (MONGOAUTH == 'true') {
+    MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/Feinstaubi_A';          // URL to mongo database
+}
 const API_URL = 'http://archive.luftdaten.info/';	            // URL to API on 'luftdaten.info'
 
 let dBase = null;
@@ -83,7 +90,7 @@ function getdirlistOfOneDay(day) {
 //            console.log(response.statusCode);
             if ((response.statusCode != 200 ) || (error)) {     // if not OK
                 console.log(error);                             // log error
-                reject(error);                                  // and return the rror
+                return reject(error);                                  // and return the rror
             }
             let a = body.split('"');                            // parse the list
             let list = [];
@@ -114,8 +121,14 @@ async function enterSensors(db,list,dt) {
 
 // read CSV file and enter data
 async function putOneSensorInDb(db,name,dt) {
-    let erg = await readOneSensorOneDay(name, dt)
-    return await enterOneSensorinDB(db,name, dt,erg);
+    let erg;
+    try {
+        let erg = await readOneSensorOneDay(name, dt);
+        return await enterOneSensorinDB(db, name, dt, erg);
+    }
+    catch(err) {
+        console.log("Error in putOneSensorInDB()");
+    }
 }
 
 
@@ -125,9 +138,9 @@ function readOneSensorOneDay(name, dt) {
         let url = API_URL + dt + '/' + name;                    // construct URL
         let sid = name.split("_")[3].replace('.csv', '');
         request(url, function (error, response, body) {         // request the file
-            if((error) || (response.statusCode != 200)) {
-                console.log("error readOneSensorOneDay:", error);
-                reject("Error", error);                         // if not OK, reject
+            if((error) || (response.statusCode != 200) || (body == "")) {
+                console.log("\nerror:",error, " readOneSensorOneDay at url:", url);
+                return reject("Error", error);                         // if not OK, reject
             }
             $.csv.toObjects(body, {separator: ';'}, function (err, data) {  // parse CSV
 //                console.log("Lang: ", data.length);
@@ -175,7 +188,7 @@ async function enterOneSensorinDB(db,name,dt,erg) {
             console.log('New Sensor:', sid);                    // no
             await db.createCollection(collName);             // create collectiom
             await coll.createIndex({datetime: 1}, {expireAfterSeconds: 32832000});  // expire after 32 days
-            inserted = await coll.insertMany(all)           // then insert values
+            inserted = await coll.insertMany(all);           // then insert values
             return(inserted.insertedCount);
         } else {
             let std = moment.utc(dt).startOf('day');
@@ -200,7 +213,7 @@ async function enterOneSensorinDB(db,name,dt,erg) {
                         if(e.message.startsWith("E11000 duplicate")) {
                             console.log("Duplicate:",sid);
                             dupCount++;
-                            continue;
+
                         } else {
                             console.log(e, sid);
                         }

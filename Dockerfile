@@ -14,7 +14,7 @@ ADD data/mysids.txt /opt/app/data
 RUN touch crontab.tmp \
     && echo '*/5 * * * *      cd /opt/app && node ./dat2mongo.js  >>/var/log/dat2mongo.log 2>&1' > crontab.tmp \
     && echo '2   * * * *      cd /opt/app && node ./location.js   >>/var/log/location.log  2>&1' >> crontab.tmp \
-    && echo '4 9 * * * *      cd /opt/app && node ./readFromcvs.js >>/var/log/readFrom.log  2>&1' >> crontab.tmp \
+    && echo '4   9 * * *      cd /opt/app && node ./readFromcvs.js >>/var/log/readFrom.log  2>&1' >> crontab.tmp \
     && crontab crontab.tmp \
     && rm -rf crontab.tmp
 
