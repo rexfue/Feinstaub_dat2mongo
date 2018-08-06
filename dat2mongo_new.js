@@ -37,7 +37,7 @@ if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
 if (MONGOPORT == undefined) { MONGOPORT =  27017; }
 
 // const MONGO_URL = 'mongodb://rxf:5C5dB|m@' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
-const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaub';  	// URL to mongo database
+const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaub1';  	// URL to mongo database
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data.24h.json';	// URL to API on 'luftdaten.info'
 const SAVE_NAME = 'data/aktdata.json';  // filename for actual data
@@ -301,38 +301,53 @@ function constructDBaseEntries(body) {
 //TODO: den Tag jedesmalh prüfen und gg. wechseln, da in einem Datensatz von luftdaten evtl. ein Tagwechsel drin ist
 // Enter data into DBASE
 async function doTheEntry(entries) {
+    let coll = dBase.collection('values');                      // use this collection
     for (let i=0; i< entries.length; i++) {                     // loop through all entries
-        if(!entries[i].values[0].hasOwnProperty('P1')) {
-            continue;
-        }
-        let id = entries[i].sid + '_'+today;                    // build collection name
-        let coll = dBase.collection('values');                  // use this collection
-        try {
-            let entryRead = await coll.findOne({_id:id});       // read the collection
-            if(entryRead == null) {                             // collection undefined
-                entryRead = await enterEmptyDocument(id,coll);  // => put empty entry in DB
+        let curday =  500;                                      // dummy
+        let idx = 0;
+        let entryRead;
+        let id;
+
+        for (let j = 0; j < entries[i].values.length; j++) {       // loop through the values
+            let ncurday = moment(entries[i].values[0].datetime).dayOfYear();
+            if (curday != ncurday)
+            {
+                curday = ncurday;
+                id = entries[i].sid + '_' + moment(entries[i].values[j].datetime).format("YYYYMMDD");
+                try {
+                    entryRead = await coll.findOne({_id: id});       // read the collection
+                    if (entryRead == null) {                             // collection undefined
+                        entryRead = await enterEmptyDocument(id, coll);  // => put empty entry in DB
+                    }
+                }
+                catch(e) {
+                    console.log("EntryTead:", e);
+                }
+                idx = entryRead.idx;                            // get current index in values-array
             }
-//            let idx = entryRead.idx;                            // get current index in values-array
-//            for (let j=0; j< entries[i].values.length; j++, idx++) {    // llop through the values
-                for (let j=0; j< entries[i].values.length; j++) {    // llop through the values
-                let dt =  entries[i].values[j].datetime.getTime();  // get datetime of current record
+            try {
+                let dt = entries[i].values[j].datetime.getTime();  // get datetime of current record
                 let fnd = entryRead.values.findIndex(x => x.datetime.getTime() === dt); // check, if
                 if (fnd != -1) {                                // record is already in DB
+                    dcount++;
                     continue;                                   // skip if yes
                 }
-//                let k = 'values.'+idx;                          // calculate index
-                let key =  entries[i].values[j];                // this is the records data
+                let k = 'values.' + idx;                          // calculate index
+                let key = entries[i].values[j];                // this is the records data
                 let updated = await coll.updateOne(             // enter into DB (update empty record)
                     {_id: id},
                     {
-                        $push: {values: key},
-//                        $inc: {idx: 1}
+//                        $push: {values: key},
+                        $set: {[k]: key},
+                        $inc: {idx: 1}
                     }
                 );
+                idx++;
             }
-        }
-        catch(e) {
-            console.log("Was faul");                            // there's an error
+            catch (e)
+            {
+                console.log("Update",e);                            // there's an error
+            }
         }
     }
 }
@@ -340,13 +355,15 @@ async function doTheEntry(entries) {
 
 // Build empty document and insert into dbase
 async function enterEmptyDocument(id,coll) {
-    let document = {_id:id, values: []};
-/*    let values = [];
+    let document = {_id:id, idx:0, values: []};
+    let values = [];
+    let dt = moment("2199-01-01T00:00:00Z");
     for (let i=0; i< 580; i++) {
-        values.push({datetime: new Date(), P1:0, P2:0})
+        values.push({datetime: dt.toDate(), P1:0, P2:0});
+        dt.add(1,'s');
     }
     document.values = values;
-*/    await coll.insertOne(document);
+    await coll.insertOne(document);
     return document;
 }
 
@@ -490,7 +507,7 @@ function markMySids(mysids,sid) {
 // Put paramater to MQTT (Thingspeak)
 function put2MQTT(data1,data2) {
 //	let KEY = process.env.TTS_KEY;
-    let KEY = 'FBBFM9YDE2GT2JD9';
+    let KEY = 'IK2HVH0PQA7M1KCL';
     let cmd = '&field1='+data1/1000;
     dBase.stats(function(err,erg) {
         cmd += '&field2='+parseInt(erg.objects) + '&field3='+parseInt(erg.storageSize) + '&field4='+parseInt(allcount);
