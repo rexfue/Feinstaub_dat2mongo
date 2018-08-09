@@ -295,7 +295,7 @@ async function constructDBaseEntries(body) {
 	console.log("Parsen dauert:", los-st1);
 
     // check, if 'mysensor' are still alive
-    checkMySids(mySids);
+//    checkMySids(mySids);      <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     saveDatatoFile(MY_SIDS,JSON.stringify(mySids));
 
 	doTheEntry(allValues)
