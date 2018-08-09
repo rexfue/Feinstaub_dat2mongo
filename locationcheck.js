@@ -3,7 +3,7 @@
     Check the file 'newsid' for new entries. For every entry find the address
     via goole maps API. Because of restrictions (max 2500 requsts/day), we look
     for max LOCATION_MAX (1000) addresses in one call.
-    After adding the address to the dbase 'properties', we delete tis entry in the
+    After adding the address to the dbase 'properties', we delete its entry in the
     'newsid'-File.
 
  */
@@ -23,7 +23,7 @@ const GOOGLE_ADDRESS='https://maps.googleapis.com/maps/api/geocode/json?latlng='
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
 if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT == undefined) { MONGOPORT =  27020; }
+if (MONGOPORT == undefined) { MONGOPORT =  27017; }
 const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
 
 const FILE1 = 'data/newsids_s.txt';

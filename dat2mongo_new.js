@@ -33,11 +33,17 @@ const ACTVE_CNT=12;                     // 12 * 5min => 1 h for activity check
 
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
-if (MONGOHOST == undefined) { MONGOHOST = 'localhost';}
-if (MONGOPORT == undefined) { MONGOPORT =  27017; }
+let MONGOAUTH = process.env.MONGOAUTH;
+let MONGOUSRP = process.env.MONGOUSRP;
 
-// const MONGO_URL = 'mongodb://rxf:5C5dB|m@' + MONGOHOST +':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
-const MONGO_URL = 'mongodb://' + MONGOHOST +':'+MONGOPORT+'/Feinstaub1';  	// URL to mongo database
+if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
+if (MONGOPORT === undefined) { MONGOPORT =  27017; }
+if (MONGOAUTH === undefined) { MONGOAUTH =  'false'; }
+
+let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
+if (MONGOAUTH == 'true') {
+    MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/Feinstaubi_A';          // URL to mongo database
+}
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data.24h.json';	// URL to API on 'luftdaten.info'
 const SAVE_NAME = 'data/aktdata.json';  // filename for actual data
@@ -58,6 +64,8 @@ let icount=0;
 let dcount=0;
 let allcount=0;
 let today = "";
+let allSIDs = {lastChange: null, sensors: []};
+let lastSIDchanged = 0;
 
 // fix date 'date_since'
 const D1900 = moment.utc('1900-01-01').toDate();
@@ -172,9 +180,20 @@ function readDatafromFile(fn) {
 }
 
 
-function constructDBaseEntries(body) {
+async function constructDBaseEntries(body) {
     console.log("Dauer bis Aufruf zum Parsen: ", moment() - start);
     let mySids = readDatafromFile(MY_SIDS);
+    let colltyp = dBase.collection('types');                      // use this collection
+    try {
+        allSIDs = await colltyp.findOne();
+        if(allSIDs == null) {
+            allSIDs = {lastChange: 0, sensors: []};
+        }
+        lastSIDchanged = allSIDs.lastChange;
+    }
+    catch(e) {
+        console.log(e);
+    }
     let allValues = [];
     let st1 = moment();
     try {
@@ -200,6 +219,7 @@ function constructDBaseEntries(body) {
             let values = body[i].sensordatavalues;                  // fetch values
             for (let n = 0; n < values.length; n++) {               // for all values
                 let typ = values[n].value_type;                     // extract type
+                enterArten(sid,sname,typ);
                 let x = 0.0;                                        // bdefault for value
                 try {
                     x = parseFloat(values[n].value);                // extract value
@@ -282,7 +302,7 @@ function constructDBaseEntries(body) {
         .then(() => {
                 return doMapEntry(allValues);
             })
-        .then(() => {
+        .then(async function() {
 //        let now = moment();
 //        if (now.format('HH:mm') == LOCATION_TIME) {
 //            await lc.locationcheck(dBase);
@@ -292,6 +312,16 @@ function constructDBaseEntries(body) {
         let gz1 = moment()-start;
         console.log("Gesamtzeit: ", gz1 ,'msec  ', minsec(gz1));
         console.log("icount=",icount,"  dcount=",dcount,"  allcount:",allcount);
+//        console.log(allSIDs);
+        if(lastSIDchanged != allSIDs.lastChange) {
+            console.log("store 'types'");
+            try {
+                await colltyp.updateOne({_id: allSIDs._id},{$set: allSIDs});
+            }
+            catch(e) {
+                console.log(e);
+            }
+        }
         put2MQTT(gz,allcount);
         console.log("All thru!  Time needed: ",minsec(moment()-start) );
         dBase.close();
@@ -304,7 +334,7 @@ async function doTheEntry(entries) {
     let coll = dBase.collection('values');                      // use this collection
     for (let i=0; i< entries.length; i++) {                     // loop through all entries
         let curday =  500;                                      // dummy
-        let idx = 0;
+//        let idx = 0;
         let entryRead;
         let id;
 
@@ -323,7 +353,7 @@ async function doTheEntry(entries) {
                 catch(e) {
                     console.log("EntryTead:", e);
                 }
-                idx = entryRead.idx;                            // get current index in values-array
+//                idx = entryRead.idx;                            // get current index in values-array
             }
             try {
                 let dt = entries[i].values[j].datetime.getTime();  // get datetime of current record
@@ -332,17 +362,14 @@ async function doTheEntry(entries) {
                     dcount++;
                     continue;                                   // skip if yes
                 }
-                let k = 'values.' + idx;                          // calculate index
+//                let k = 'values.' + idx;                          // calculate index
                 let key = entries[i].values[j];                // this is the records data
                 let updated = await coll.updateOne(             // enter into DB (update empty record)
                     {_id: id},
                     {
-//                        $push: {values: key},
-                        $set: {[k]: key},
-                        $inc: {idx: 1}
+                        $push: {values: key},
                     }
                 );
-                idx++;
             }
             catch (e)
             {
@@ -355,14 +382,7 @@ async function doTheEntry(entries) {
 
 // Build empty document and insert into dbase
 async function enterEmptyDocument(id,coll) {
-    let document = {_id:id, idx:0, values: []};
-    let values = [];
-    let dt = moment("2199-01-01T00:00:00Z");
-    for (let i=0; i< 580; i++) {
-        values.push({datetime: dt.toDate(), P1:0, P2:0});
-        dt.add(1,'s');
-    }
-    document.values = values;
+    let document = {_id:id, values: []};
     await coll.insertOne(document);
     return document;
 }
@@ -533,4 +553,34 @@ function buildDummy() {
     dummy.max = {p1: 0, p2: 0};
     dummy.min = {p1: 0, p2: 0};
     return dummy;
+}
+
+function enterSIDinList(styp) {
+    if (allSIDs.hasOwnProperty(styp)) {
+        allSIDs[styp] += 1;
+    } else {
+        allSIDs[styp] = 0;
+    }
+}
+
+function enterArten(sid,sname,styp) {
+    if (['samples','min_micro','max_micro', 'durP1', 'durP2', 'ratioP1', 'ratioP2'].includes(styp)) {
+        return;
+    }
+    let fnd = allSIDs.sensors.findIndex(x => x.sname == sname); // Name schon enthalten?
+    if(fnd != -1) {                                         // ja ...
+        let fs = allSIDs.sensors[fnd].sid.findIndex(x => x == sid);
+        if(fs == -1) {
+            allSIDs.sensors[fnd].count++;                   // ... mitzählen ...
+            allSIDs.sensors[fnd].sid.push(sid);             // ... und Nummer merken ...
+        }
+        let f1 = allSIDs.sensors[fnd].sensing.findIndex(x => x == styp); // styp enthalten?
+        if (f1 == -1) {                                     // ... neien ->
+            allSIDs.sensors[fnd].sensing.push(styp);        // eintragen
+            allSIDs.lastChange = moment();
+        }
+    } else {
+        allSIDs.sensors.push({sname: sname, sid:[sid], count:1, sensing: [styp]});
+        allSIDs.lastChange = moment();
+    }
 }

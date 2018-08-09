@@ -182,9 +182,6 @@ function constructDBaseEntries(body) {
             let entry = {};
             let val = [];
             let sid = body[i].sensor.id;
-            if(sid == 122) {
-                console.log(body[i]);
-            }
             let sname = body[i].sensor.sensor_type.name;
             let idx = allValues.findIndex(function (obj) {          // is sid alredy in array
                 return obj.sid === sid;
