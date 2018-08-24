@@ -40,9 +40,9 @@ if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
 if (MONGOPORT === undefined) { MONGOPORT =  27017; }
 if (MONGOAUTH === undefined) { MONGOAUTH =  'false'; }
 
-let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
+let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT+'/Feinstaub';  	// URL to mongo database
 if (MONGOAUTH == 'true') {
-    MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/Feinstaubi_A';          // URL to mongo database
+    MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/Feinstaub';          // URL to mongo database
 }
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data.24h.json';	// URL to API on 'luftdaten.info'
@@ -316,7 +316,7 @@ async function constructDBaseEntries(body) {
         if(lastSIDchanged != allSIDs.lastChange) {
             console.log("store 'types'");
             try {
-                await colltyp.updateOne({_id: allSIDs._id},{$set: allSIDs});
+                await colltyp.updateOne({_id: allSIDs._id},{$set: allSIDs},{upsert: true});
             }
             catch(e) {
                 console.log(e);
@@ -328,32 +328,31 @@ async function constructDBaseEntries(body) {
 	});
 }
 
-//TODO: den Tag jedesmalh prüfen und gg. wechseln, da in einem Datensatz von luftdaten evtl. ein Tagwechsel drin ist
 // Enter data into DBASE
 async function doTheEntry(entries) {
     let coll = dBase.collection('values');                      // use this collection
     for (let i=0; i< entries.length; i++) {                     // loop through all entries
         let curday =  500;                                      // dummy
-//        let idx = 0;
         let entryRead;
         let id;
 
-        for (let j = 0; j < entries[i].values.length; j++) {       // loop through the values
-            let ncurday = moment(entries[i].values[0].datetime).dayOfYear();
-            if (curday != ncurday)
+        // TODO: Properties einlesen, checken, ob da. Wenn ja, checken obs ne Änderung gibt
+
+        for (let j = 0; j < entries[i].values.length; j++) {    // loop through the values
+            let ncurday = moment(entries[i].values[0].datetime).dayOfYear();  // extract day
+            if (curday != ncurday)                              // same day ?
             {
-                curday = ncurday;
+                curday = ncurday;                               // no, construct new id
                 id = entries[i].sid + '_' + moment(entries[i].values[j].datetime).format("YYYYMMDD");
                 try {
-                    entryRead = await coll.findOne({_id: id});       // read the collection
-                    if (entryRead == null) {                             // collection undefined
-                        entryRead = await enterEmptyDocument(id, coll);  // => put empty entry in DB
+                    entryRead = await coll.findOne({_id: id});  // read the document
+                    if (entryRead == null) {                             // document undefined
+                        entryRead = await enterEmptyDocument(id, coll, entries[i]);  // => put empty document into collection
                     }
                 }
                 catch(e) {
                     console.log("EntryTead:", e);
                 }
-//                idx = entryRead.idx;                            // get current index in values-array
             }
             try {
                 let dt = entries[i].values[j].datetime.getTime();  // get datetime of current record
@@ -362,18 +361,24 @@ async function doTheEntry(entries) {
                     dcount++;
                     continue;                                   // skip if yes
                 }
-//                let k = 'values.' + idx;                          // calculate index
-                let key = entries[i].values[j];                // this is the records data
+                let key = entries[i].values[j];                 // this is the records data
+                let compare = { min:entryRead.min, max:entryRead.max, avg24:entryRead.avg24} ;
+                let val = calcMinMaxAvg(key, compare);
                 let updated = await coll.updateOne(             // enter into DB (update empty record)
                     {_id: id},
                     {
                         $push: {values: key},
+                        $set: {
+                             min: val.min,
+                             max: val.max,
+                             avg24: val.avg24
+                         }
                     }
                 );
             }
             catch (e)
             {
-                console.log("Update",e);                            // there's an error
+                console.log("Update",e);                        // there's an error
             }
         }
     }
@@ -381,10 +386,60 @@ async function doTheEntry(entries) {
 
 
 // Build empty document and insert into dbase
-async function enterEmptyDocument(id,coll) {
-    let document = {_id:id, values: []};
+async function enterEmptyDocument(id,coll, entry) {
+    let min = {};
+    let max = {};
+    let avg24 = {};
+    for (const [key, val] of Object.entries(entry.values[0])) {
+        min[key] = val;
+        max[key] = val;
+        avg24[key] = {sum:0, cnt:0};
+    }
+    delete avg24.datetime;
+
+    let document = {
+        _id: id,
+        values: [],
+    };
+    document.min = min;
+    document.max = max;
+    document.avg24 = avg24;
+
     await coll.insertOne(document);
     return document;
+}
+
+
+// Min/Max-Berechnung
+function calcMinMaxAvg(values,dbentry) {
+    if (dbentry.min == undefined) {
+        dbentry.min = {};
+    }
+    if (dbentry.max == undefined) {
+        dbentry.max = {};
+    }
+    if (dbentry.avg24 == undefined) {
+        dbentry.avg24 = {};
+    }
+    for (const [key, val] of Object.entries(values)) {
+        if (!((key == 'P1') || (key=='P2') || (key=='temperature') || (key=='humidity') || (key == 'pressure'))) {
+            continue;
+        }
+        if((dbentry.max[key] == undefined) || (val < dbentry.min[key])) {
+            dbentry.min[key] = val;
+            dbentry.min.datetime = values.datetime;
+        }
+        if((dbentry.max[key] == undefined) || (val > dbentry.max[key])) {
+            dbentry.max[key]=val;
+            dbentry.max.datetime = values.datetime;
+        }
+        if (dbentry.avg24[key] == undefined ) {
+            dbentry.avg24[key] = {sum:0, cnt:0};
+        }
+        dbentry.avg24[key].sum += val;
+        dbentry.avg24[key].cnt +=1;
+    }
+    return dbentry;
 }
 
 async function XXdoTheEntry(entries) {
@@ -526,8 +581,8 @@ function markMySids(mysids,sid) {
 
 // Put paramater to MQTT (Thingspeak)
 function put2MQTT(data1,data2) {
-//	let KEY = process.env.TTS_KEY;
-    let KEY = 'IK2HVH0PQA7M1KCL';
+	let KEY = process.env.TTS_KEY;
+//    let KEY = 'IK2HVH0PQA7M1KCL';
     let cmd = '&field1='+data1/1000;
     dBase.stats(function(err,erg) {
         cmd += '&field2='+parseInt(erg.objects) + '&field3='+parseInt(erg.storageSize) + '&field4='+parseInt(allcount);
@@ -577,10 +632,10 @@ function enterArten(sid,sname,styp) {
         let f1 = allSIDs.sensors[fnd].sensing.findIndex(x => x == styp); // styp enthalten?
         if (f1 == -1) {                                     // ... neien ->
             allSIDs.sensors[fnd].sensing.push(styp);        // eintragen
-            allSIDs.lastChange = moment();
+            allSIDs.lastChange = moment().toDate();
         }
     } else {
         allSIDs.sensors.push({sname: sname, sid:[sid], count:1, sensing: [styp]});
-        allSIDs.lastChange = moment();
+        allSIDs.lastChange = moment().toDate();
     }
 }

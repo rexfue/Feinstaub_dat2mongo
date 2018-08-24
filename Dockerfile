@@ -5,11 +5,10 @@ RUN cd /tmp && npm install
 RUN mkdir -p /opt/app && cp -a /tmp/node_modules /opt/app/
 RUN mkdir /opt/app/data 
 
-ENV MONGOHOST fst-mongo
-
 WORKDIR /opt/app
 ADD dat2mongo.js location.js readFromcvs.js package.json jquery.csv.js /opt/app/
 ADD dat2mongo_new.js /opt/app
+ADD readFromcvs2Shard.js /opt/app
 ADD data/mysids.txt /opt/app/data
 ADD crontab.tmp /opt/app
 
