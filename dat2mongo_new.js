@@ -372,7 +372,10 @@ async function doTheEntry(entries) {
                              min: val.min,
                              max: val.max,
                              avg24: val.avg24
-                         }
+                         },
+                        $inc: {
+                            count: 1
+                        }
                     }
                 );
             }
@@ -400,6 +403,7 @@ async function enterEmptyDocument(id,coll, entry) {
     let document = {
         _id: id,
         values: [],
+        count: 0,
     };
     document.min = min;
     document.max = max;
