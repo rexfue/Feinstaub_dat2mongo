@@ -8,7 +8,7 @@ RUN mkdir /opt/app/data
 WORKDIR /opt/app
 ADD dat2mongo.js location.js readFromcvs.js package.json jquery.csv.js /opt/app/
 ADD dat2mongo_new.js /opt/app
-ADD readFromcvs2Shard.js /opt/app
+# ADD readFromcvs2Shard.js /opt/app
 ADD data/mysids.txt /opt/app/data
 ADD crontab.tmp /opt/app
 

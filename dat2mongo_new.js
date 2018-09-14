@@ -36,13 +36,15 @@ let MONGOPORT = process.env.MONGOPORT;
 let MONGOAUTH = process.env.MONGOAUTH;
 let MONGOUSRP = process.env.MONGOUSRP;
 
+let MONGOBASE='Feinstaub_N';
+
 if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
 if (MONGOPORT === undefined) { MONGOPORT =  27017; }
 if (MONGOAUTH === undefined) { MONGOAUTH =  'false'; }
 
-let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT+'/Feinstaub';  	// URL to mongo database
+let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT;  	// URL to mongo database
 if (MONGOAUTH == 'true') {
-    MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/Feinstaub';          // URL to mongo database
+    MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/?authSource=Feinstaubi_A';          // URL to mongo database
 }
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data.24h.json';	// URL to API on 'luftdaten.info'
@@ -113,12 +115,12 @@ saveDatatoFile(MY_SIDS,JSON.stringify(mysid));
 */
 
 
-MongoClient.connect(MONGO_URL, function(err,db) {
+MongoClient.connect(MONGO_URL, function(err,client) {
     if (err) {
         console.log(err);
         process.exit(-1);    
     }	
-    dBase = db;
+    dBase = client.db(MONGOBASE);
     startProgram();
 });
 
@@ -337,6 +339,7 @@ async function doTheEntry(entries) {
         let id;
 
         // TODO: Properties einlesen, checken, ob da. Wenn ja, checken obs ne Änderung gibt
+        // TODO: Besser: properties einfach jeden Tag mmit dazu
 
         for (let j = 0; j < entries[i].values.length; j++) {    // loop through the values
             let ncurday = moment(entries[i].values[0].datetime).dayOfYear();  // extract day
@@ -389,6 +392,7 @@ async function doTheEntry(entries) {
 
 
 // Build empty document and insert into dbase
+// TODO: Hier noch die proerties dazu rein basteln!
 async function enterEmptyDocument(id,coll, entry) {
     let min = {};
     let max = {};
@@ -585,8 +589,8 @@ function markMySids(mysids,sid) {
 
 // Put paramater to MQTT (Thingspeak)
 function put2MQTT(data1,data2) {
-	let KEY = process.env.TTS_KEY;
-//    let KEY = 'IK2HVH0PQA7M1KCL';
+//	let KEY = process.env.TTS_KEY;
+    let KEY = 'IK2HVH0PQA7M1KCL';
     let cmd = '&field1='+data1/1000;
     dBase.stats(function(err,erg) {
         cmd += '&field2='+parseInt(erg.objects) + '&field3='+parseInt(erg.storageSize) + '&field4='+parseInt(allcount);
