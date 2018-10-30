@@ -1,0 +1,4 @@
+#2   * * * *      cd /opt/app && node ./location.js   >>/var/log/location.log  2>&1
+2-59/5 * * * *   cd /opt/app && node ./dat2mongo_new.js  >>/var/log/dat2mongo_new.log 2>&1
+#4   9 * * *      cd /opt/app && node ./readFromcvs.js >>/var/log/readFrom.log  2>&1
+#*/5 * * * *      cd /opt/app && node ./dat2mongo.js  >>/var/log/dat2mongo.log 2>&1

@@ -14,11 +14,9 @@
  *   Google holen und abspeichern
  *
  *
- * <<<<<<<<<<<<<< TODO
-    - 24h-gleitenden Mittelwert laufend mitrechnen
-    - diesen immer um 0h00 (UTC !!!!) extra als Tagesmittewert abspeichern und in
-      eine eigen collection eintragen
  **/
+
+const VERSION = " 2.0.3  2018-10-29";
 
 const LIVE=true;
 
@@ -27,7 +25,6 @@ const moment = require('moment');
 const MongoClient = require('mongodb').MongoClient;
 const fs = require('fs');
 const nodemailer = require('nodemailer');
-const reuqest = require('request');
 
 const ACTVE_CNT=12;                     // 12 * 5min => 1 h for activity check
 
@@ -56,7 +53,7 @@ const MAP_COLL='mapdata';
 
 
 // Because of restrictions (max. 2500 rquests/day) on Google-Maps-API, we request only 2000 adrresses in one
-// batch püer day freom Google.
+// batch per day freom Google.
 const LOCATION_TIME = '15:07';                      // Clock-time, when location will be checked
 
 let dBase = null;
@@ -214,21 +211,24 @@ async function constructDBaseEntries(body) {
                 idx = allValues.length - 1;                         // adjust index
                 markMySids(mySids, sid);                            // mark 'mysids' as OK
 //            allValues[idx].properties = {};
-//            allValues[idx].properties.othersensors = [];        // init array for the other sensors on same location
+//            allValues[idx].properties.othersensors = [];          // init array for the other sensors on same location
             }
             let date = moment.utc(body[i].timestamp);               // extract date of entry
             entry.datetime = date.toDate();					        // make datetime for Mongo (== ISODate)
             let values = body[i].sensordatavalues;                  // fetch values
             for (let n = 0; n < values.length; n++) {               // for all values
                 let typ = values[n].value_type;                     // extract type
-                enterArten(sid,sname,typ);
-                let x = 0.0;                                        // bdefault for value
-                try {
-                    x = parseFloat(values[n].value);                // extract value
-                } catch (err) {
-                    console.log(err);
+                if (enterArten(sid,sname,typ)) {                    // count type, return treu if OK
+                    let x = 0.0;                                    // default for value
+                    try {
+                        x = parseFloat(values[n].value);            // extract value
+                    } catch (err) {
+                        console.log(err);
+                    }
+                    entry[typ] = x;                                 // put typ and value into new entry
+                } else {
+                                                           // type not wanted
                 }
-                entry[typ] = x;                                     // put typ and value into new entry
             }
             let x = true;                                           // set flag
             for (let n = 0; n < val.length; n++) {                  // for all values in this entry
@@ -349,7 +349,7 @@ async function doTheEntry(entries) {
                 id = entries[i].sid + '_' + moment(entries[i].values[j].datetime).format("YYYYMMDD");
                 try {
                     entryRead = await coll.findOne({_id: id});  // read the document
-                    if (entryRead == null) {                             // document undefined
+                    if (entryRead == null) {                    // document undefined
                         entryRead = await enterEmptyDocument(id, coll, entries[i]);  // => put empty document into collection
                     }
                 }
@@ -408,10 +408,12 @@ async function enterEmptyDocument(id,coll, entry) {
         _id: id,
         values: [],
         count: 0,
+        min: min,
+        max: max,
+        avg24: avg24,
+//        properties: entry.properties,
     };
-    document.min = min;
-    document.max = max;
-    document.avg24 = avg24;
+//    delete document.properties._id;
 
     await coll.insertOne(document);
     return document;
@@ -450,70 +452,29 @@ function calcMinMaxAvg(values,dbentry) {
     return dbentry;
 }
 
-async function XXdoTheEntry(entries) {
-    const collections = await dBase.listCollections().toArray();    // read all collection names
-    let inserted = 0;                                           // count number of inserted records
-    let korr = dBase.collection(PROP_COLL);
-    console.log("Einträge gesamt:",entries.length);
-    for (let i=0; i< entries.length; i++) {                     // loop through all entries
-        let cursid = entries[i].sid;                            // extract current SID
-        let cname = 'data_'+cursid;                             // build collection name
-        var coll = dBase.collection(cname);                     // use this collection
-//  	console.log(entries[i]);
-        try {
-            if (!collections.map(c => c.name).includes(cname)) {  // does it already exist in collections?
-                console.log("New:", cname);                     // no -> show it it
-                await dBase.createCollection(cname);            // create collection
-                // and set TTL Index to 32 days
-                await coll.createIndex({datetime: 1}, {expireAfterSeconds: 32832000});  // 380 Tage
-            } else {                                            // collection exists
-                try {
-                    const doc = await korr.findOne({_id:cursid});      // does it exist in properties?
-                    if(doc == null) {
-                        await korr.insertOne(entries[i].properties);  // no, then save properties
-                    }
-                    inserted = await coll.insertMany(entries[i].values);  // save new values in collection
-                    icount += inserted.insertedCount;
-                }
-                catch (e) {
-                    if(e.message.startsWith("E11000 duplicate")) {
-//                        console.log("Duplicate:",entries[i].sid);
-                        dcount++;
-
-                    } else {
-                        console.log(e, cname);
-                    }
-                }
-            }
-        }
-        catch(err) {
-            console.log(err);
-        }
-    }
-}
-
 
 async function doMapEntry(entries) {
     let mapcoll = dBase.collection(MAP_COLL);
-    try {
-        await mapcoll.drop();  // remover collection
-    }
-    catch(e) {
-    }
-    await dBase.createCollection(MAP_COLL);
-    await mapcoll.createIndex({location: "2dsphere"});      // and on Location
 
-    for (x in entries) {                     // loop through all entries
+    for (let x in entries) {                     // loop through all entries
         let one = entries[x];
         try {
-            let toEnter = {};
             if('P1' in one.values[0]) {
-                toEnter.values = one.values[one.values.length - 1];
-                toEnter._id = one.sid;
-                toEnter.location = one.properties.location[one.properties.location.length - 1].loc;
-
-                let inserted = await mapcoll.insertOne(toEnter);
-//                console.log(inserted.insertedCount);
+                let inserted = await mapcoll.updateOne(
+                    { _id:one.sid },
+                    {
+                        $set: {
+                            location: one.properties.location[one.properties.location.length - 1].loc
+                        },
+                        $push: {
+                            values: {
+                                $each: one.values,
+                                $slice: -5
+                            }
+                        }
+                    },
+                    { upsert: true }
+                    );
             }
         }
         catch(e) {
@@ -590,7 +551,7 @@ function markMySids(mysids,sid) {
 // Put paramater to MQTT (Thingspeak)
 function put2MQTT(data1,data2) {
 //	let KEY = process.env.TTS_KEY;
-    let KEY = 'IK2HVH0PQA7M1KCL';
+    let KEY = 'ZS4ZPNKPNDXVLTYI';
     let cmd = '&field1='+data1/1000;
     dBase.stats(function(err,erg) {
         cmd += '&field2='+parseInt(erg.objects) + '&field3='+parseInt(erg.storageSize) + '&field4='+parseInt(allcount);
@@ -627,8 +588,8 @@ function enterSIDinList(styp) {
 }
 
 function enterArten(sid,sname,styp) {
-    if (['samples','min_micro','max_micro', 'durP1', 'durP2', 'ratioP1', 'ratioP2'].includes(styp)) {
-        return;
+    if (['samples','min_micro','max_micro', 'durP1', 'durP2', 'ratioP1', 'ratioP2', 'pressure_at_sealevel'].includes(styp)) {
+        return false;
     }
     let fnd = allSIDs.sensors.findIndex(x => x.sname == sname); // Name schon enthalten?
     if(fnd != -1) {                                         // ja ...
@@ -638,7 +599,7 @@ function enterArten(sid,sname,styp) {
             allSIDs.sensors[fnd].sid.push(sid);             // ... und Nummer merken ...
         }
         let f1 = allSIDs.sensors[fnd].sensing.findIndex(x => x == styp); // styp enthalten?
-        if (f1 == -1) {                                     // ... neien ->
+        if (f1 == -1) {                                     // ... nein ->
             allSIDs.sensors[fnd].sensing.push(styp);        // eintragen
             allSIDs.lastChange = moment().toDate();
         }
@@ -646,4 +607,5 @@ function enterArten(sid,sname,styp) {
         allSIDs.sensors.push({sname: sname, sid:[sid], count:1, sensing: [styp]});
         allSIDs.lastChange = moment().toDate();
     }
+    return true;
 }
