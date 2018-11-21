@@ -326,6 +326,9 @@ async function doTheEntry(entries) {
                     }
                     inserted = await coll.insertMany(entries[i].values);  // save new values in collection
                     icount += inserted.insertedCount;
+                    let anz = entries[i].values.length;
+                    let ts = entries[i].values[anz-1].datetime;
+                    await korr.updateOne({_id:cursid},{$set:{last_seen:ts}},{ upsert:true});
                 }
                 catch (e) {
                     if(e.message.startsWith("E11000 duplicate")) {
