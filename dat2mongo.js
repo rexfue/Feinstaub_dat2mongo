@@ -417,9 +417,13 @@ function minsec(msec) {
 // [{ sid,cnt}, {sid, cnt}, {}, ... ]
 function checkMySids(ms) {
     let body = "";
+    let toAddr = 'rexfue@gmail.com';
     for(let i=0; i<ms.length; i++) {
         if (--ms[i].cnt == 0) {
-            body += "Sensor " + ms[i].sid + " von " + ms[i].name + " sendet seit einer Stunde nicht mehr\n"
+            body += "Sensor " + ms[i].sid + " von " + ms[i].name + " sendet seit einer Stunde nicht mehr\n";
+            if(ms[i].name == 'felix') {
+                toAddr += ',felix.fuerst@gmail.com';
+            }
         }
     }
     if (body != "") {
@@ -428,7 +432,7 @@ function checkMySids(ms) {
         // setup email data with unicode symbols
         let mailOptions = {
             from: '"Feinstaub" <rxf@fuerst-stuttgart.de>',            // sender address
-            to: 'rexfue@gmail.com',                     // list of receivers
+            to: toAddr,                                                // list of receivers
             subject: 'Feinstaubsensor(en) ausgefallen', // Subject line
             text: body // plain text body
         };
