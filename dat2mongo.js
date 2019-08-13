@@ -27,9 +27,10 @@ const moment = require('moment');
 const MongoClient = require('mongodb').MongoClient;
 const fs = require('fs');
 const nodemailer = require('nodemailer');
-const reuqest = require('request');
 
 const ACTVE_CNT=12;                     // 12 * 5min => 1 h for activity check
+
+const MONGOBASE = 'Feinstaubi_A';
 
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
@@ -40,9 +41,9 @@ if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
 if (MONGOPORT === undefined) { MONGOPORT =  27017; }
 if (MONGOAUTH === undefined) { MONGOAUTH =  'false'; }
 
-let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT+'/Feinstaubi_A';  	// URL to mongo database
+let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT;  	// URL to mongo database
 if (MONGOAUTH == 'true') {
-    MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/Feinstaubi_A';          // URL to mongo database
+    MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/?authSource=admin';          // URL to mongo database
 }
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data.24h.json';	// URL to API on 'luftdaten.info'
@@ -107,56 +108,64 @@ let mysid =
 saveDatatoFile(MY_SIDS,JSON.stringify(mysid));
 */
 
-MongoClient.connect(MONGO_URL, function(err,db) {
+MongoClient.connect(MONGO_URL, { useNewUrlParser: true },function(err,client) {
     if (err) {
         console.log(err);
         process.exit(-1);    
     }	
-    dBase = db;
-    startProgram();
+    dBase = client.db(MONGOBASE);
+    console.log("Mongo connected. Starting program");
+    startProgram(client);
 });
 
 
 
-function startProgram() {
+function startProgram(client) {
     if (LIVE == true) {
-        doReadfromAPI();
+        doReadfromAPI(client);
     } else {
-        constructDBaseEntries(readDatafromFile(SAVE_NAME));
+        constructDBaseEntries(client,readDatafromFile(SAVE_NAME));
     }
 }
 
-function doReadfromAPI() {
-    request(API_URL, function(error, response, body) {
-        let jsBody;
-        console.log('error:', error); // Print the error if one occurred
-        console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
-        end = moment();
-        try {
-            jsBody = JSON.parse(body);
-            console.log("1-Dauer read from net: ", end - start);
-            saveDatatoFile(SAVE_NAME,JSON.stringify(jsBody));
-            end1 = moment();
-            console.log("1-Dauer save to Disk: ", end1 - start);
-            constructDBaseEntries(jsBody);
-        } catch (err) {
-            request(API_URL, function (error, response, body) {
-                console.log('error:', error); // Print the error if one occurred
-                console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
-                try {
-                    jsBody = JSON.parse(body);
-                    console.log("2-Dauer read from net: ", end - start);
-                    saveDatatoFile(SAVE_NAME,JSON.stringify(jsBody));
-                    end1 = moment();
-                    console.log("2-Dauer save to Disk: ", end1 - start);
-                    constructDBaseEntries(jsBody);
-                } catch (err) {
-                    console.log(err);
-                    process.exit(-1);
-                }
-            });
-        }
-    });
+function doReadfromAPI(client) {
+    console.log("Start Reading from API");
+    try {
+        request(API_URL, {timeout: 5000}, function (error, response, body) {
+            let jsBody;
+            console.log('error:', error); // Print the error if one occurred
+            console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
+            end = moment();
+            try {
+                jsBody = JSON.parse(body);
+                console.log("1-Dauer read from net: ", end - start);
+                saveDatatoFile(SAVE_NAME, JSON.stringify(jsBody));
+                end1 = moment();
+                console.log("1-Dauer save to Disk: ", end1 - start);
+                constructDBaseEntries(client, jsBody);
+            } catch (err) {
+                request(API_URL, {timeout: 5000}, function (error, response, body) {
+                    console.log('error:', error); // Print the error if one occurred
+                    console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
+                    try {
+                        jsBody = JSON.parse(body);
+                        console.log("2-Dauer read from net: ", end - start);
+                        saveDatatoFile(SAVE_NAME, JSON.stringify(jsBody));
+                        end1 = moment();
+                        console.log("2-Dauer save to Disk: ", end1 - start);
+                        constructDBaseEntries(client, jsBody);
+                    } catch (err) {
+                        console.log(err);
+                        process.exit(-1);
+                    }
+                });
+            }
+        });
+    }
+    catch(err) {
+        console.log(err);
+        process.exit(-1);
+    }
 }
 
 // var obj = objArray.find(function (obj) { return obj.id === 3; });
@@ -172,7 +181,7 @@ function readDatafromFile(fn) {
 }
 
 
-function constructDBaseEntries(body) {
+function constructDBaseEntries(client,body) {
     console.log("Dauer bis Aufruf zum Parsen: ", moment() - start);
     let mySids = readDatafromFile(MY_SIDS);
     let allValues = [];
@@ -297,7 +306,8 @@ function constructDBaseEntries(body) {
         console.log("icount=",icount,"  dcount=",dcount,"  allcount:",allcount);
         put2MQTT(gz,allcount);
         console.log("All thru!  Time needed: ",minsec(moment()-start) );
-        dBase.close();
+        console.log(moment());
+        client.close();
 	});
 }
 
@@ -316,8 +326,9 @@ async function doTheEntry(entries) {
             if (!collections.map(c => c.name).includes(cname)) {  // does it already exist in collections?
                 console.log("New:", cname);                     // no -> show it it
                 await dBase.createCollection(cname);            // create collection
-                // and set TTL Index to 32 days
-                await coll.createIndex({datetime: 1}, {expireAfterSeconds: 32832000});  // 380 Tage
+                // and set TTL Index to Environment TTL_INDEX oder, falls nicht da, auf 380 Tage
+                let ttl_index = (process.env.TTL_INDEX != undefined) ? process.env.TTL_INDEX : 32832000;
+                await coll.createIndex({datetime: 1}, {expireAfterSeconds: ttl_index});  // 380 Tage
             } else {                                            // collection exists
                 try {
                     const doc = await korr.findOne({_id: cursid});      // does it exist in properties?
@@ -461,7 +472,7 @@ function put2MQTT(data1,data2) {
     let cmd = '&field1='+data1/1000;
     dBase.stats(function(err,erg) {
         cmd += '&field2='+parseInt(erg.objects) + '&field3='+parseInt(erg.storageSize) + '&field4='+parseInt(allcount);
-        request.get('https://api.thingspeak.com/update?api_key='+KEY+cmd, function (err, resp, bod) {
+        request.get('https://api.thingspeak.com/update?api_key='+KEY+cmd, {timeout: 5000 }, function (err, resp, bod) {
             if(err) {
                 console.log(err);
             } else {
