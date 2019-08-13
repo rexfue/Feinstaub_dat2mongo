@@ -81,7 +81,7 @@ let transporter = nodemailer.createTransport({
     secure: false, // true for 465, false for other ports
     auth: {
         user: 'rxf@fuerst-stuttgart.de', // generated ethereal user
-        pass: 'Jup!ter4'  // generated ethereal password
+        pass: 'tibTop-xopqar-1qyrqe'  // generated ethereal password
     }
 });
 
@@ -192,7 +192,7 @@ function constructDBaseEntries(client,body) {
             let val = [];
             let sid = body[i].sensor.id;
             let sname = body[i].sensor.sensor_type.name;
-            let idx = allValues.findIndex(function (obj) {          // is sid alredy in array
+            let idx = allValues.findIndex(function (obj) {   // is sid already in array
                 return obj.sid === sid;
             });
             if (idx != -1) {                                        // yes
@@ -251,6 +251,9 @@ function constructDBaseEntries(client,body) {
             };
 //            console.log(properties.sid);
             allValues[idx].properties = properties;
+            if (sname == "Laerm") {
+                console.log(allValues[idx]);
+            }
             let fnd = allValues.findIndex(function (obj) {          // is current location-id in array?
                 let idx = obj.properties.location.length - 1;       // use newest location entry
                 return obj.properties.location[idx].id === body[i].location.id;
@@ -267,6 +270,7 @@ function constructDBaseEntries(client,body) {
                     allValues[idx].properties.othersensors.push({'id': fndsid, 'name': allValues[fnd].properties.name});  // enter sid and name
                 }
             }
+
         }
     }
     catch(xerr) {
