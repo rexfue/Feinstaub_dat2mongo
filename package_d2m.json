@@ -1,9 +1,9 @@
 {
   "name": "d2mongo",
-  "version": "2.0.3",
-  "date": "2018-10-29",
+  "version": "2.1.0",
+  "date": "2019-08-13",
   "description": "",
-  "main": "dat2mongo_multi.js",
+  "main": "dat2mongo.js",
   "directories": {
     "doc": "doc"
   },
@@ -20,8 +20,8 @@
     "jquery": "^3.3.1",
     "mathjs": "^5.0.0",
     "moment": "^2.20.1",
-    "mongodb": "^2.2.33",
-    "nodemailer": "^4.4.1",
+    "mongodb": "^3.3.0",
+    "nodemailer": "^4.7.0",
     "request": "^2.83.0"
   }
 }

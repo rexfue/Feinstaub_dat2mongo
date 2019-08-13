@@ -108,7 +108,7 @@ let mysid =
 saveDatatoFile(MY_SIDS,JSON.stringify(mysid));
 */
 
-MongoClient.connect(MONGO_URL, { useNewUrlParser: true },function(err,client) {
+MongoClient.connect(MONGO_URL, { useNewUrlParser: true , useUnifiedTopology: true },function(err,client) {
     if (err) {
         console.log(err);
         process.exit(-1);    

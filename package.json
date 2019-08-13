@@ -17,11 +17,11 @@
   "author": "rxf@gmail.com",
   "license": "ISC",
   "dependencies": {
-    "jquery": "^3.3.1",
-    "mathjs": "^5.0.0",
-    "moment": "^2.20.1",
-    "mongodb": "^2.2.33",
+    "jquery": "^3.4.1",
+    "mathjs": "^5.10.3",
+    "moment": "^2.24.0",
+    "mongodb": "^3.3.0",
     "nodemailer": "^4.7.0",
-    "request": "^2.83.0"
+    "request": "^2.88.0"
   }
 }

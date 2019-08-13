@@ -18,7 +18,7 @@ fi
 
 docker build -f Dockerfile_$1 -t $1 .
 
-if [ $2 != "" ]
+if [ "$2" != "" ]
 then
     docker save $1 | bzip2 | pv | ssh $2 'bunzip2 | docker load'
 fi
