@@ -222,7 +222,6 @@ function constructDBaseEntries(client,body) {
                 entry.E_eq = Math.exp(entry.noise_LAeq);
                 entry.E_mx = Math.exp(entry.noise_LA_max);
                 entry.E_mi = Math.exp(entry.noise_LA_min);
-                console.log(entry);
             }
             let x = true;                                           // set flag
             for (let n = 0; n < val.length; n++) {                  // for all values in this entry
@@ -258,9 +257,6 @@ function constructDBaseEntries(client,body) {
             };
 //            console.log(properties.sid);
             allValues[idx].properties = properties;
-            if (sname == "Laerm") {
-                console.log(allValues[idx]);
-            }
             let fnd = allValues.findIndex(function (obj) {          // is current location-id in array?
                 let idx = obj.properties.location.length - 1;       // use newest location entry
                 return obj.properties.location[idx].id === body[i].location.id;
