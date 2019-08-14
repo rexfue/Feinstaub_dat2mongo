@@ -217,6 +217,13 @@ function constructDBaseEntries(client,body) {
                 }
                 entry[typ] = x;                                     // put typ and value into new entry
             }
+            // if Noise-Senseo, add exp values to every entry
+            if(sname == 'Laerm') {
+                entry.E_eq = Math.exp(entry.noise_LAeq);
+                entry.E_mx = Math.exp(entry.noise_LA_max);
+                entry.E_mi = Math.exp(entry.noise_LA_min);
+                console.log(entry);
+            }
             let x = true;                                           // set flag
             for (let n = 0; n < val.length; n++) {                  // for all values in this entry
                 if (date.isSame(val[n].datetime)) {                 // if the same datetime is aready entered
