@@ -14,13 +14,11 @@
  *   Google holen und abspeichern
  *
  *
- * <<<<<<<<<<<<<< TODO
-    - 24h-gleitenden Mittelwert laufend mitrechnen
-    - diesen immer um 0h00 (UTC !!!!) extra als Tagesmittewert abspeichern und in
-      eine eigen collection eintragen
  **/
 
-const LIVE=false;
+const VERSION = " 2.0.3  2018-10-29";
+
+const LIVE=true;
 
 const request = require('request');
 const moment = require('moment');
@@ -30,12 +28,12 @@ const nodemailer = require('nodemailer');
 
 const ACTVE_CNT=12;                     // 12 * 5min => 1 h for activity check
 
-const MONGOBASE = 'Feinstaubi_A';
-
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
 let MONGOAUTH = process.env.MONGOAUTH;
 let MONGOUSRP = process.env.MONGOUSRP;
+
+let MONGOBASE='Feinstaub_N';
 
 if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
 if (MONGOPORT === undefined) { MONGOPORT =  27017; }
@@ -43,25 +41,30 @@ if (MONGOAUTH === undefined) { MONGOAUTH =  'false'; }
 
 let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT;  	// URL to mongo database
 if (MONGOAUTH == 'true') {
-    MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/?authSource=admin';          // URL to mongo database
+    MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/?authSource=Feinstaubi_A';          // URL to mongo database
 }
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data.24h.json';	// URL to API on 'luftdaten.info'
 const SAVE_NAME = 'data/aktdata.json';  // filename for actual data
-const MY_SIDS = 'data/mysids.json';      // file, where my SIDs are stored
+const MY_SIDS = 'data/mysids.txt';      // file, where my SIDs are stored
 const PROP_COLL='properties';
 const MAP_COLL='mapdata';
 
+
+
 // Because of restrictions (max. 2500 rquests/day) on Google-Maps-API, we request only 2000 adrresses in one
-// batch püer day freom Google.
+// batch per day freom Google.
 const LOCATION_TIME = '15:07';                      // Clock-time, when location will be checked
 
 let dBase = null;
-let start = moment().local();
+let start = moment();
 let end, end1;
 let icount=0;
 let dcount=0;
 let allcount=0;
+let today = "";
+let allSIDs = {lastChange: null, sensors: []};
+let lastSIDchanged = 0;
 
 // fix date 'date_since'
 const D1900 = moment.utc('1900-01-01').toDate();
@@ -81,7 +84,7 @@ let transporter = nodemailer.createTransport({
     secure: false, // true for 465, false for other ports
     auth: {
         user: 'rxf@fuerst-stuttgart.de', // generated ethereal user
-        pass: 'tibTop-xopqar-1qyrqe'  // generated ethereal password
+        pass: 'Jup!ter4'  // generated ethereal password
     }
 });
 
@@ -108,74 +111,59 @@ let mysid =
 saveDatatoFile(MY_SIDS,JSON.stringify(mysid));
 */
 
-MongoClient.connect(MONGO_URL, { useNewUrlParser: true , useUnifiedTopology: true },function(err,client) {
+
+MongoClient.connect(MONGO_URL, function(err,client) {
     if (err) {
         console.log(err);
         process.exit(-1);    
     }	
     dBase = client.db(MONGOBASE);
-    console.log("Mongo connected. Starting program");
-    startProgram(client);
+    startProgram();
 });
 
 
 
-function startProgram(client) {
+function startProgram() {
+    today = moment().format("YYYYMMDD");
+
     if (LIVE == true) {
-        doReadfromAPI(client);
+        doReadfromAPI();
     } else {
-        constructDBaseEntries(client,readDatafromFile(SAVE_NAME));
+        constructDBaseEntries(readDatafromFile(SAVE_NAME));
     }
 }
 
-function doReadfromAPI(client) {
-    console.log("Start Reading from API");
-    try {
-        console.log("Try - 1");
-        request(API_URL, {timeout: 5000}, function (error, response, body) {
-            let jsBody;
-            console.log('error:', error); // Print the error if one occurred
-            console.log('statusCode at first try:', response && response.statusCode); // Print the response status code if a response was received
-            end = moment();
-            try {
-                console.log("Try - 2");
-                console.log("Try to parse - first run");
-                jsBody = JSON.parse(body);
-                console.log("1-Dauer read from net: ", end - start);
-                saveDatatoFile(SAVE_NAME, JSON.stringify(jsBody));
-                end1 = moment();
-                console.log("1-Dauer save to Disk: ", end1 - start);
-                constructDBaseEntries(client, jsBody);
-            } catch (err) {
-                console.log("Catch - 2");
-                request(API_URL, {timeout: 5000}, function (error, response, body) {
-                    console.log('error:', error); // Print the error if one occurred
-                    console.log('statusCode at second try:', response && response.statusCode); // Print the response status code if a response was received
-                    try {
-                        console.log("Try - 3");
-                        console.log("Try to parse - second run");
-                        jsBody = JSON.parse(body);
-                        console.log("2-Dauer read from net: ", end - start);
-                        saveDatatoFile(SAVE_NAME, JSON.stringify(jsBody));
-                        end1 = moment();
-                        console.log("2-Dauer save to Disk: ", end1 - start);
-                        constructDBaseEntries(client, jsBody);
-                    } catch (err) {
-                        console.log("Catch - 3");
-                        console.log(err);
-                        console.log("Exit at", moment().format());
-                        process.exit(-1);
-                    }
-                });
-            }
-        });
-    }
-    catch(err) {
-        console.log("Catch - 1");
-        console.log(err);
-        console.log("Exit at", moment().format());
-        process.exit(-1);
-    }
+function doReadfromAPI() {
+    request(API_URL, function(error, response, body) {
+        let jsBody;
+        console.log('error:', error); // Print the error if one occurred
+        console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
+        end = moment();
+        try {
+            jsBody = JSON.parse(body);
+            console.log("1-Dauer read from net: ", end - start);
+            saveDatatoFile(SAVE_NAME,JSON.stringify(jsBody));
+            end1 = moment();
+            console.log("1-Dauer save to Disk: ", end1 - start);
+            constructDBaseEntries(jsBody);
+        } catch (err) {
+            request(API_URL, function (error, response, body) {
+                console.log('error:', error); // Print the error if one occurred
+                console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
+                try {
+                    jsBody = JSON.parse(body);
+                    console.log("2-Dauer read from net: ", end - start);
+                    saveDatatoFile(SAVE_NAME,JSON.stringify(jsBody));
+                    end1 = moment();
+                    console.log("2-Dauer save to Disk: ", end1 - start);
+                    constructDBaseEntries(jsBody);
+                } catch (err) {
+                    console.log(err);
+                    process.exit(-1);
+                }
+            });
+        }
+    });
 }
 
 // var obj = objArray.find(function (obj) { return obj.id === 3; });
@@ -191,9 +179,20 @@ function readDatafromFile(fn) {
 }
 
 
-function constructDBaseEntries(client,body) {
+async function constructDBaseEntries(body) {
     console.log("Dauer bis Aufruf zum Parsen: ", moment() - start);
     let mySids = readDatafromFile(MY_SIDS);
+    let colltyp = dBase.collection('types');                      // use this collection
+    try {
+        allSIDs = await colltyp.findOne();
+        if(allSIDs == null) {
+            allSIDs = {lastChange: 0, sensors: []};
+        }
+        lastSIDchanged = allSIDs.lastChange;
+    }
+    catch(e) {
+        console.log(e);
+    }
     let allValues = [];
     let st1 = moment();
     try {
@@ -202,7 +201,7 @@ function constructDBaseEntries(client,body) {
             let val = [];
             let sid = body[i].sensor.id;
             let sname = body[i].sensor.sensor_type.name;
-            let idx = allValues.findIndex(function (obj) {   // is sid already in array
+            let idx = allValues.findIndex(function (obj) {          // is sid alredy in array
                 return obj.sid === sid;
             });
             if (idx != -1) {                                        // yes
@@ -212,26 +211,24 @@ function constructDBaseEntries(client,body) {
                 idx = allValues.length - 1;                         // adjust index
                 markMySids(mySids, sid);                            // mark 'mysids' as OK
 //            allValues[idx].properties = {};
-//            allValues[idx].properties.othersensors = [];        // init array for the other sensors on same location
+//            allValues[idx].properties.othersensors = [];          // init array for the other sensors on same location
             }
             let date = moment.utc(body[i].timestamp);               // extract date of entry
             entry.datetime = date.toDate();					        // make datetime for Mongo (== ISODate)
             let values = body[i].sensordatavalues;                  // fetch values
             for (let n = 0; n < values.length; n++) {               // for all values
                 let typ = values[n].value_type;                     // extract type
-                let x = 0.0;                                        // bdefault for value
-                try {
-                    x = parseFloat(values[n].value);                // extract value
-                } catch (err) {
-                    console.log(err);
+                if (enterArten(sid,sname,typ)) {                    // count type, return treu if OK
+                    let x = 0.0;                                    // default for value
+                    try {
+                        x = parseFloat(values[n].value);            // extract value
+                    } catch (err) {
+                        console.log(err);
+                    }
+                    entry[typ] = x;                                 // put typ and value into new entry
+                } else {
+                                                           // type not wanted
                 }
-                entry[typ] = x;                                     // put typ and value into new entry
-            }
-            // if Noise-Senseo, add exp values to every entry
-            if(sname == 'Laerm') {
-                entry.E_eq = Math.exp(entry.noise_LAeq);
-                entry.E_mx = Math.exp(entry.noise_LA_max);
-                entry.E_mi = Math.exp(entry.noise_LA_min);
             }
             let x = true;                                           // set flag
             for (let n = 0; n < val.length; n++) {                  // for all values in this entry
@@ -252,6 +249,7 @@ function constructDBaseEntries(client,body) {
             let properties = {
                 _id: sid,
                 name: sname,
+//                typ: getType(val[0]),
                 date_since: moment().toDate(),
                 location: [{
                     loc: {
@@ -259,7 +257,7 @@ function constructDBaseEntries(client,body) {
                         coordinates: [checkLatLon(body[i].location.longitude), checkLatLon(body[i].location.latitude)]
                     },
                     id: body[i].location.id,
-                    altitude: checkAltitude(body[i].location),
+                    altitude: 0,
                     address: defaultAddress,
                     date_since: moment().toDate(),
                 }],
@@ -283,7 +281,6 @@ function constructDBaseEntries(client,body) {
                     allValues[idx].properties.othersensors.push({'id': fndsid, 'name': allValues[fnd].properties.name});  // enter sid and name
                 }
             }
-
         }
     }
     catch(xerr) {
@@ -297,141 +294,188 @@ function constructDBaseEntries(client,body) {
  */
 //	console.log(allValues);
 	let los = moment();
-	let maptim;
 	console.log("Parsen dauert:", los-st1);
 
     // check, if 'mysensor' are still alive
-    checkMySids(mySids);
+//    checkMySids(mySids);      <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     saveDatatoFile(MY_SIDS,JSON.stringify(mySids));
 
 	doTheEntry(allValues)
         .then(() => {
-        //         maptim = moment();
-        //         return doMapEntry(allValues);
-        //     })
-        // .then(() => {
+                return doMapEntry(allValues);
+            })
+        .then(async function() {
 //        let now = moment();
-
 //        if (now.format('HH:mm') == LOCATION_TIME) {
 //            await lc.locationcheck(dBase);
 //        }
         let gz =  moment()-los;
-        console.log("Map Schreiben: ",moment()-maptim);
         console.log("Schreiben in dBase: ",  gz ,'msec  ', minsec(gz));
         let gz1 = moment()-start;
         console.log("Gesamtzeit: ", gz1 ,'msec  ', minsec(gz1));
         console.log("icount=",icount,"  dcount=",dcount,"  allcount:",allcount);
+//        console.log(allSIDs);
+        if(lastSIDchanged != allSIDs.lastChange) {
+            console.log("store 'types'");
+            try {
+                await colltyp.updateOne({_id: allSIDs._id},{$set: allSIDs},{upsert: true});
+            }
+            catch(e) {
+                console.log(e);
+            }
+        }
         put2MQTT(gz,allcount);
         console.log("All thru!  Time needed: ",minsec(moment()-start) );
-        console.log(moment());
-        client.close();
+        dBase.close();
 	});
 }
 
-
+// Enter data into DBASE
 async function doTheEntry(entries) {
-    let collections;
-    let mapcoll = dBase.collection(MAP_COLL);
-    let inserted = 0;                                           // count number of inserted records
-    let korr = dBase.collection(PROP_COLL);
-    try {
-        collections = await dBase.listCollections().toArray();    // read all collection names
-    }
-    catch(err) {
-        console.log(err);
-    }
-//    let has = await dBase.listCollections({name:'datat_140'}).hasNext();
-//    console.log("Coll:",has);
-    console.log("Einträge gesamt:",entries.length);
+    let coll = dBase.collection('values');                      // use this collection
     for (let i=0; i< entries.length; i++) {                     // loop through all entries
-        let item = entries[i];
-        let cname = 'data_'+item.sid;                             // build collection name
-        var coll = dBase.collection(cname);                     // use this collection
-//  	console.log(item);
-        try {
-            if (!collections.map(c => c.name).includes(cname)) {  // does it already exist in collections?
-                console.log("New:", cname);                     // no -> show it it
-                try {
-                    await dBase.createCollection(cname);        // create collection
-                    // and set TTL Index to Environment TTL_INDEX or, if undefined, to 380 days
-                    let ttl_index = (process.env.TTL_INDEX != undefined) ?  parseInt(process.env.TTL_INDEX) : 32832000;
-                    await coll.createIndex({datetime: 1}, {expireAfterSeconds: ttl_index});
-                } catch(err) {
-                    console.log(err);
-                }
-            } else {                                            // collection exists
-                try {
-                    const doc = await korr.findOne({_id: item.sid});   // does it exist in properties?
-                    if (doc == null) {
-                        await korr.insertOne(item.properties);  // no, then save properties
-                    } else {                                    // prop exists
-                        if(doc.name != item.properties.name) {  // if we hav a new sensor name
-                            console.log("Sensor geändert:",doc.name,item.sid,"=>",item.properties.name);
-                            await korr.updateOne({_id:item.sid},{$set: {name:item.properties.name}});  // update properties
-// KEINE AHNUNG WAS DAS SOLLTE
-//                             let other = doc.othersensors;       // get 'othersensor'
-//                             if (other[0].id != undefined) {
-//                                 let oid = other[0].id;
-//                                 console.log("Other = ",oid);
-//                             } else {
-//                                 console.log("Other = undefined");
-//                             }
-                        }
-                    }
-                    inserted = await coll.insertMany(item.values);  // save new values in collection
-                    icount += inserted.insertedCount;
-                    let anz = item.values.length;
-                    let ts = item.values[anz-1].datetime;
-                    await korr.updateOne({_id:item.sid},{$set:{last_seen:ts}},{ upsert:true});
+        let curday =  500;                                      // dummy
+        let entryRead;
+        let id;
 
-                    let toEnter = {};
-                    toEnter.values = item.values[anz-1];
-                    toEnter._id = item.sid;
-                    toEnter.name = item.properties.name;
-                    toEnter.location = item.properties.location[0].loc;
-                    let updated = await mapcoll.updateOne({_id:item.sid},{$set: toEnter},{upsert:true});
-//                    console.log(updated);
-                }
-                catch (e) {
-                    if(e.message.startsWith("E11000 duplicate")) {
-//                        console.log("Duplicate:",item.sid);
-                        dcount++;
+        // TODO: Properties einlesen, checken, ob da. Wenn ja, checken obs ne Änderung gibt
+        // TODO: Besser: properties einfach jeden Tag mmit dazu
 
-                    } else {
-                        console.log(e, cname);
+        for (let j = 0; j < entries[i].values.length; j++) {    // loop through the values
+            let ncurday = moment(entries[i].values[0].datetime).dayOfYear();  // extract day
+            if (curday != ncurday)                              // same day ?
+            {
+                curday = ncurday;                               // no, construct new id
+                id = entries[i].sid + '_' + moment(entries[i].values[j].datetime).format("YYYYMMDD");
+                try {
+                    entryRead = await coll.findOne({_id: id});  // read the document
+                    if (entryRead == null) {                    // document undefined
+                        entryRead = await enterEmptyDocument(id, coll, entries[i]);  // => put empty document into collection
                     }
+                }
+                catch(e) {
+                    console.log("EntryTead:", e);
                 }
             }
-        }
-        catch(err) {
-            console.log(err);
+            try {
+                let dt = entries[i].values[j].datetime.getTime();  // get datetime of current record
+                let fnd = entryRead.values.findIndex(x => x.datetime.getTime() === dt); // check, if
+                if (fnd != -1) {                                // record is already in DB
+                    dcount++;
+                    continue;                                   // skip if yes
+                }
+                let key = entries[i].values[j];                 // this is the records data
+                let compare = { min:entryRead.min, max:entryRead.max, avg24:entryRead.avg24} ;
+                let val = calcMinMaxAvg(key, compare);
+                let updated = await coll.updateOne(             // enter into DB (update empty record)
+                    {_id: id},
+                    {
+                        $push: {values: key},
+                        $set: {
+                             min: val.min,
+                             max: val.max,
+                             avg24: val.avg24
+                         },
+                        $inc: {
+                            count: 1
+                        }
+                    }
+                );
+            }
+            catch (e)
+            {
+                console.log("Update",e);                        // there's an error
+            }
         }
     }
+}
+
+
+// Build empty document and insert into dbase
+// TODO: Hier noch die proerties dazu rein basteln!
+async function enterEmptyDocument(id,coll, entry) {
+    let min = {};
+    let max = {};
+    let avg24 = {};
+    for (const [key, val] of Object.entries(entry.values[0])) {
+        min[key] = val;
+        max[key] = val;
+        avg24[key] = {sum:0, cnt:0};
+    }
+    delete avg24.datetime;
+
+    let document = {
+        _id: id,
+        values: [],
+        count: 0,
+        min: min,
+        max: max,
+        avg24: avg24,
+//        properties: entry.properties,
+    };
+//    delete document.properties._id;
+
+    await coll.insertOne(document);
+    return document;
+}
+
+
+// Min/Max-Berechnung
+function calcMinMaxAvg(values,dbentry) {
+    if (dbentry.min == undefined) {
+        dbentry.min = {};
+    }
+    if (dbentry.max == undefined) {
+        dbentry.max = {};
+    }
+    if (dbentry.avg24 == undefined) {
+        dbentry.avg24 = {};
+    }
+    for (const [key, val] of Object.entries(values)) {
+        if (!((key == 'P1') || (key=='P2') || (key=='temperature') || (key=='humidity') || (key == 'pressure'))) {
+            continue;
+        }
+        if((dbentry.max[key] == undefined) || (val < dbentry.min[key])) {
+            dbentry.min[key] = val;
+            dbentry.min.datetime = values.datetime;
+        }
+        if((dbentry.max[key] == undefined) || (val > dbentry.max[key])) {
+            dbentry.max[key]=val;
+            dbentry.max.datetime = values.datetime;
+        }
+        if (dbentry.avg24[key] == undefined ) {
+            dbentry.avg24[key] = {sum:0, cnt:0};
+        }
+        dbentry.avg24[key].sum += val;
+        dbentry.avg24[key].cnt +=1;
+    }
+    return dbentry;
 }
 
 
 async function doMapEntry(entries) {
     let mapcoll = dBase.collection(MAP_COLL);
-    // try {
-    //     await mapcoll.drop();  // remover collection
-    // }
-    // catch(e) {
-    // }
-    // await dBase.createCollection(MAP_COLL);
-    // await mapcoll.createIndex({location: "2dsphere"});      // and on Location
 
-    for (x in entries) {                     // loop through all entries
+    for (let x in entries) {                     // loop through all entries
         let one = entries[x];
         try {
-            let toEnter = {};
-//            if(('P1' in one.values[0]) || ('P2' in one.values[0]) || one.properties.name.startsWith("Radia") ) {
-                toEnter.values = one.values[one.values.length - 1];
-                toEnter._id = one.sid;
-                toEnter.location = one.properties.location[one.properties.location.length - 1].loc;
-                toEnter.name = one.properties.name;
-                let inserted = await mapcoll.updateOne({_id:one.sid},{$set: toEnter}, {upsert:true});
-//           console.log(inserted.insertedCount);
-//            }
+            if('P1' in one.values[0]) {
+                let inserted = await mapcoll.updateOne(
+                    { _id:one.sid },
+                    {
+                        $set: {
+                            location: one.properties.location[one.properties.location.length - 1].loc
+                        },
+                        $push: {
+                            values: {
+                                $each: one.values,
+                                $slice: -5
+                            }
+                        }
+                    },
+                    { upsert: true }
+                    );
+            }
         }
         catch(e) {
             console.log("doMapEntry: ", one.sid, e);
@@ -446,15 +490,6 @@ function checkLatLon(w) {
         return 0.0;
     } else {
         return parseFloat(w);
-    }
-}
-
-// Check, if altitude is ther. If so, use it, else use 0
-function checkAltitude(loc) {
-    if(loc.altitude == undefined) {
-        return 0;
-    } else {
-        return parseFloat(loc.altitude);
     }
 }
 
@@ -479,13 +514,9 @@ function minsec(msec) {
 // [{ sid,cnt}, {sid, cnt}, {}, ... ]
 function checkMySids(ms) {
     let body = "";
-    let toAddr = 'rexfue@gmail.com';
     for(let i=0; i<ms.length; i++) {
         if (--ms[i].cnt == 0) {
-            body += "Sensor " + ms[i].sid + " von " + ms[i].name + " sendet seit einer Stunde nicht mehr\n";
-            if(ms[i].name == 'felix') {
-                toAddr += ',felix.fuerst@gmail.com';
-            }
+            body += "Sensor " + ms[i].sid + " von " + ms[i].name + " sendet seit einer Stunde nicht mehr\n"
         }
     }
     if (body != "") {
@@ -494,7 +525,7 @@ function checkMySids(ms) {
         // setup email data with unicode symbols
         let mailOptions = {
             from: '"Feinstaub" <rxf@fuerst-stuttgart.de>',            // sender address
-            to: toAddr,                                                // list of receivers
+            to: 'rexfue@gmail.com',                     // list of receivers
             subject: 'Feinstaubsensor(en) ausgefallen', // Subject line
             text: body // plain text body
         };
@@ -519,11 +550,12 @@ function markMySids(mysids,sid) {
 
 // Put paramater to MQTT (Thingspeak)
 function put2MQTT(data1,data2) {
-	let KEY = process.env.TTS_KEY;
+//	let KEY = process.env.TTS_KEY;
+    let KEY = 'ZS4ZPNKPNDXVLTYI';
     let cmd = '&field1='+data1/1000;
     dBase.stats(function(err,erg) {
         cmd += '&field2='+parseInt(erg.objects) + '&field3='+parseInt(erg.storageSize) + '&field4='+parseInt(allcount);
-        request.get('https://api.thingspeak.com/update?api_key='+KEY+cmd, {timeout: 5000 }, function (err, resp, bod) {
+        request.get('https://api.thingspeak.com/update?api_key='+KEY+cmd, function (err, resp, bod) {
             if(err) {
                 console.log(err);
             } else {
@@ -535,3 +567,45 @@ function put2MQTT(data1,data2) {
     });
 }
 
+function buildDummy() {
+    const val = {sec: 0, p1: 0, p2: 0, p1_24: 0, p2_24: 0};
+    let dummy = {values: []};
+    for (let i = 0; i < 580; i++) {
+        dummy.values.push(val);
+    }
+    dummy.avg = {p1_sum: 0, p2_sum: 0, p1_cnf: 0, p2_cnt: 0};
+    dummy.max = {p1: 0, p2: 0};
+    dummy.min = {p1: 0, p2: 0};
+    return dummy;
+}
+
+function enterSIDinList(styp) {
+    if (allSIDs.hasOwnProperty(styp)) {
+        allSIDs[styp] += 1;
+    } else {
+        allSIDs[styp] = 0;
+    }
+}
+
+function enterArten(sid,sname,styp) {
+    if (['samples','min_micro','max_micro', 'durP1', 'durP2', 'ratioP1', 'ratioP2', 'pressure_at_sealevel'].includes(styp)) {
+        return false;
+    }
+    let fnd = allSIDs.sensors.findIndex(x => x.sname == sname); // Name schon enthalten?
+    if(fnd != -1) {                                         // ja ...
+        let fs = allSIDs.sensors[fnd].sid.findIndex(x => x == sid);
+        if(fs == -1) {
+            allSIDs.sensors[fnd].count++;                   // ... mitzählen ...
+            allSIDs.sensors[fnd].sid.push(sid);             // ... und Nummer merken ...
+        }
+        let f1 = allSIDs.sensors[fnd].sensing.findIndex(x => x == styp); // styp enthalten?
+        if (f1 == -1) {                                     // ... nein ->
+            allSIDs.sensors[fnd].sensing.push(styp);        // eintragen
+            allSIDs.lastChange = moment().toDate();
+        }
+    } else {
+        allSIDs.sensors.push({sname: sname, sid:[sid], count:1, sensing: [styp]});
+        allSIDs.lastChange = moment().toDate();
+    }
+    return true;
+}
