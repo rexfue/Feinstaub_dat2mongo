@@ -229,9 +229,12 @@ function constructDBaseEntries(client,body) {
             }
             // if Noise-Senseo, add exp values to every entry
             if(sname == 'Laerm') {
-                entry.E_eq = Math.exp(entry.noise_LAeq);
-                entry.E_mx = Math.exp(entry.noise_LA_max);
-                entry.E_mi = Math.exp(entry.noise_LA_min);
+                entry.E_eq = Math.pow(10,entry.noise_LAeq);
+                entry.E_mx = Math.pow(10,entry.noise_LA_max);
+                entry.E_mi = Math.pow(10,entry.noise_LA_min);
+                entry.E10tel_eq = Math.pow(10,entry.noise_LAeq/10);
+                entry.E10tel_mx = Math.pow(10,entry.noise_LA_max/10);
+                entry.E10tel_mi = Math.pow(10,entry.noise_LA_min/10);
             }
             let x = true;                                           // set flag
             for (let n = 0; n < val.length; n++) {                  // for all values in this entry
