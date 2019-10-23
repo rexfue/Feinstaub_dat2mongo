@@ -20,7 +20,7 @@
       eine eigen collection eintragen
  **/
 
-const LIVE=false;
+const LIVE=true;
 
 const request = require('request');
 const moment = require('moment');
