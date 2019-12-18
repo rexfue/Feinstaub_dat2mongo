@@ -20,7 +20,7 @@
       eine eigen collection eintragen
  **/
 
-const LIVE=false;
+const LIVE=true;
 
 const request = require('request');
 const moment = require('moment');
@@ -73,6 +73,23 @@ const defaultAddress = {
     plz: NaN,
     street: 'F'
 };
+
+
+// Check, if another instance is still running
+// if after 3 attempts the checkfile is stilll there, run nayway !!
+let checkFile = "checkfile";
+let data = {};
+if (fs.existsSync(checkFile)) {
+    data = readDatafromFile(checkFile);
+    if (data.count < 2) {
+        data.count++;
+        saveDatatoFile(checkFile, JSON.stringify(data));
+        process.exit(0);
+    }
+}
+data.count = 0;
+saveDatatoFile(checkFile, JSON.stringify(data));
+
 
 // create reusable transporter object using the default SMTP transport
 let transporter = nodemailer.createTransport({
@@ -328,6 +345,7 @@ function constructDBaseEntries(client,body) {
         console.log("All thru!  Time needed: ",minsec(moment()-start) );
         console.log(moment());
         client.close();
+        fs.unlinkSync(checkFile);
 	});
 }
 
@@ -524,17 +542,22 @@ function markMySids(mysids,sid) {
 function put2MQTT(data1,data2) {
 	let KEY = process.env.TTS_KEY;
     let cmd = '&field1='+data1/1000;
-    dBase.stats(function(err,erg) {
-        cmd += '&field2='+parseInt(erg.objects) + '&field3='+parseInt(erg.storageSize) + '&field4='+parseInt(allcount);
-        request.get('https://api.thingspeak.com/update?api_key='+KEY+cmd, {timeout: 5000 }, function (err, resp, bod) {
-            if(err) {
-                console.log(err);
-            } else {
-                if(resp.statusCode == 200) {
-                    console.log("TheThings meldet: ",bod);
+    try {
+        dBase.stats(function (err, erg) {
+            cmd += '&field2=' + parseInt(erg.objects) + '&field3=' + parseInt(erg.storageSize) + '&field4=' + parseInt(allcount);
+            request.get('https://api.thingspeak.com/update?api_key=' + KEY + cmd, {timeout: 5000}, function (err, resp, bod) {
+                if (err) {
+                    console.log(err);
+                } else {
+                    if (resp.statusCode == 200) {
+                        console.log("TheThings meldet: ", bod);
+                    }
                 }
-            }
+            });
         });
-    });
+    }
+    catch(e) {
+        console.log("put2MQTT-Error:" , e);
+    }
 }
 
