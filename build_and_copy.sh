@@ -14,24 +14,26 @@
 
 # set -x
 port=""
+name=fst-d2m
+
 
 if [ $# -lt 1 ]
   then
-    echo "Usage buildit_and_copy.sh name [target]"
-    echo "   name:   Name of container"
-    echo "   target: Where to copy the container to (optional)"
+    echo "Usage buildit_and_copy.sh target [port]"
+    echo "   Build docker container $name and copy to target"
+    echo "Params:"
+    echo "   target: Where to copy the container to "
+    echo "   port:   ssh port if not 22 < use: '-p xxxx' > (optional)"
     exit
 fi
 
- docker build -f Dockerfile_$1 -t $1 .
+
+ docker build -f Dockerfile_$name -t $name .
 
 if [ "$2" != "" ]
 then
-  if [ "$3" != "" ]
-  then
-    port=$3
-  fi
-  dat=`date +%Y%m%d%H%M`
-  ssh $port $2 "docker tag $1 $1:V_$dat"
-  docker save $1 | bzip2 | pv | ssh $port $2 'bunzip2 | docker load'
+    port=$2
 fi
+dat=`date +%Y%m%d%H%M`
+ssh $port $1 "docker tag $name $name:V_$dat"
+docker save $name | bzip2 | pv | ssh $port $1 'bunzip2 | docker load'
