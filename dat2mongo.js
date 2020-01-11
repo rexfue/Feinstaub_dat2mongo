@@ -30,16 +30,17 @@ const nodemailer = require('nodemailer');
 
 const ACTVE_CNT=12;                     // 12 * 5min => 1 h for activity check
 
-const MONGOBASE = 'Feinstaubi_A';
 
 let MONGOHOST = process.env.MONGOHOST;
 let MONGOPORT = process.env.MONGOPORT;
 let MONGOAUTH = process.env.MONGOAUTH;
 let MONGOUSRP = process.env.MONGOUSRP;
+let MONGOBASE =  process.env.MONGOBASE;
 
 if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
 if (MONGOPORT === undefined) { MONGOPORT =  27017; }
 if (MONGOAUTH === undefined) { MONGOAUTH =  'false'; }
+if (MONGOBASE === undefined) { MONGOBASE =  'Feinstaubi_A'; }
 
 let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT;  	// URL to mongo database
 if (MONGOAUTH == 'true') {
@@ -51,10 +52,6 @@ const SAVE_NAME = 'data/aktdata.json';  // filename for actual data
 const MY_SIDS = 'data/mysids.json';      // file, where my SIDs are stored
 const PROP_COLL='properties';
 const MAP_COLL='mapdata';
-
-// Because of restrictions (max. 2500 rquests/day) on Google-Maps-API, we request only 2000 adrresses in one
-// batch püer day freom Google.
-const LOCATION_TIME = '15:07';                      // Clock-time, when location will be checked
 
 let dBase = null;
 let start = moment().local();
@@ -75,21 +72,24 @@ const defaultAddress = {
 };
 
 
+console.log("\n\rStart: ", start.format("YYYY-MM-DD HH:mm"));
+
 // Check, if another instance is still running
-// if after 3 attempts the checkfile is stilll there, run nayway !!
-let checkFile = "checkfile";
+// if after 3 attempts the checkfile is stilll there, run anyway !!
+let checkFile = "data/checkfile";
 let data = {};
 if (fs.existsSync(checkFile)) {
     data = readDatafromFile(checkFile);
     if (data.count < 2) {
         data.count++;
         saveDatatoFile(checkFile, JSON.stringify(data));
+        console.log("Exiting.. -  checkfile:",data.count);
         process.exit(0);
     }
 }
 data.count = 0;
 saveDatatoFile(checkFile, JSON.stringify(data));
-
+console.log("Starting.. - checkfile:",data.count);
 
 // create reusable transporter object using the default SMTP transport
 let transporter = nodemailer.createTransport({
@@ -102,7 +102,6 @@ let transporter = nodemailer.createTransport({
     }
 });
 
-console.log("\n\rStart: ", start.format("YYYY-MM-DD HH:mm"));
 
 /*
 let mysid =
@@ -195,8 +194,6 @@ function doReadfromAPI(client) {
     }
 }
 
-// var obj = objArray.find(function (obj) { return obj.id === 3; });
-
 // die Daten in eimnr Datei zwischenspeichern
 function saveDatatoFile(fn,data) {
     fs.writeFileSync(fn,data);
@@ -208,7 +205,7 @@ function readDatafromFile(fn) {
 }
 
 
-function constructDBaseEntries(client,body) {
+async function constructDBaseEntries(client,body) {
     console.log("Dauer bis Aufruf zum Parsen: ", moment() - start);
     let mySids = readDatafromFile(MY_SIDS);
     let allValues = [];
@@ -244,14 +241,9 @@ function constructDBaseEntries(client,body) {
                 }
                 entry[typ] = x;                                     // put typ and value into new entry
             }
-            // if Noise-Senseo, add exp values to every entry
+            // if Noise-Senseo, add exp values to LAeq
             if(sname == 'Laerm') {
-                entry.E_eq = Math.pow(10,entry.noise_LAeq);
-                entry.E_mx = Math.pow(10,entry.noise_LA_max);
-                entry.E_mi = Math.pow(10,entry.noise_LA_min);
                 entry.E10tel_eq = Math.pow(10,entry.noise_LAeq/10);
-                entry.E10tel_mx = Math.pow(10,entry.noise_LA_max/10);
-                entry.E10tel_mi = Math.pow(10,entry.noise_LA_min/10);
             }
             let x = true;                                           // set flag
             for (let n = 0; n < val.length; n++) {                  // for all values in this entry
@@ -282,6 +274,8 @@ function constructDBaseEntries(client,body) {
                     altitude: checkAltitude(body[i].location),
                     address: defaultAddress,
                     date_since: moment().toDate(),
+                    exact_loc: body[i].location.exact_location,
+                    indoor: body[i].location.indoor,
                 }],
                 othersensors: [],
             };
@@ -324,29 +318,19 @@ function constructDBaseEntries(client,body) {
     checkMySids(mySids);
     saveDatatoFile(MY_SIDS,JSON.stringify(mySids));
 
-	doTheEntry(allValues)
-        .then(() => {
-        //         maptim = moment();
-        //         return doMapEntry(allValues);
-        //     })
-        // .then(() => {
-//        let now = moment();
-
-//        if (now.format('HH:mm') == LOCATION_TIME) {
-//            await lc.locationcheck(dBase);
-//        }
-        let gz =  moment()-los;
-        console.log("Map Schreiben: ",moment()-maptim);
-        console.log("Schreiben in dBase: ",  gz ,'msec  ', minsec(gz));
-        let gz1 = moment()-start;
-        console.log("Gesamtzeit: ", gz1 ,'msec  ', minsec(gz1));
-        console.log("icount=",icount,"  dcount=",dcount,"  allcount:",allcount);
-        put2MQTT(gz,allcount);
-        console.log("All thru!  Time needed: ",minsec(moment()-start) );
-        console.log(moment());
-        client.close();
-        fs.unlinkSync(checkFile);
-	});
+	await doTheEntry(allValues);
+    let gz =  moment()-los;
+//  console.log("Map Schreiben: ",moment()-maptim);
+    console.log("Schreiben in dBase: ",  gz ,'msec  ', minsec(gz));
+    let gz1 = moment()-start;
+    console.log("Gesamtzeit: ", gz1 ,'msec  ', minsec(gz1));
+    console.log("icount=",icount,"  dcount=",dcount,"  allcount:",allcount);
+    await storeStatistics(gz,allcount);
+    put2MQTT(gz, allcount);
+    console.log("All thru!  Time needed: ", minsec(moment() - start));
+    console.log(moment());
+    client.close();
+    fs.unlinkSync(checkFile);
 }
 
 
@@ -470,7 +454,7 @@ function checkLatLon(w) {
     }
 }
 
-// Check, if altitude is ther. If so, use it, else use 0
+// Check, if altitude is there. If so, use it, else use 0
 function checkAltitude(loc) {
     if(loc.altitude == undefined) {
         return 0;
@@ -538,9 +522,26 @@ function markMySids(mysids,sid) {
     }
 }
 
+// Store statistics for database into database
+async function storeStatistics(data1,data2) {
+    try {
+        let stats = await dBase.stats(1024);
+        let entry = {statistics: stats, time2write: data1, nbrofentries: data2};
+        let collection_statistic = dBase.collection("statistic");
+        await collection_statistic.insertOne(entry);
+    }
+    catch(e) {
+        console.log("storestatistic:",e);
+    }
+}
+
+
 // Put paramater to MQTT (Thingspeak)
 function put2MQTT(data1,data2) {
 	let KEY = process.env.TTS_KEY;
+	if (KEY === undefined) {
+	    return;
+    }
     let cmd = '&field1='+data1/1000;
     try {
         dBase.stats(function (err, erg) {
