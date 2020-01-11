@@ -83,7 +83,7 @@ if (fs.existsSync(checkFile)) {
     if (data.count < 2) {
         data.count++;
         saveDatatoFile(checkFile, JSON.stringify(data));
-        console.log("Exiting.. -  checkfile:",data.count);
+        console.log("Exiting.. -  checkfile:",data.count,"\n");
         process.exit(0);
     }
 }
@@ -330,6 +330,7 @@ async function constructDBaseEntries(client,body) {
     console.log("All thru!  Time needed: ", minsec(moment() - start));
     console.log(moment());
     client.close();
+    console.log("Unlinking checkfile");
     fs.unlinkSync(checkFile);
 }
 
@@ -525,8 +526,9 @@ function markMySids(mysids,sid) {
 // Store statistics for database into database
 async function storeStatistics(data1,data2) {
     try {
-        let stats = await dBase.stats(1024);
-        let entry = {statistics: stats, time2write: data1, nbrofentries: data2};
+        let stats = await dBase.stats();
+        let datetime = moment().toDate();
+        let entry = {datetime:datetime, statistics: stats, time2write: data1, nbrofentries: data2};
         let collection_statistic = dBase.collection("statistic");
         await collection_statistic.insertOne(entry);
     }
