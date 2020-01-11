@@ -46,7 +46,7 @@ if (MONGOAUTH == 'true') {
 const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data.24h.json';	// URL to API on 'luftdaten.info'
 const SAVE_NAME = 'data/aktdata.json';  // filename for actual data
-const MY_SIDS = 'data/mysids.txt';      // file, where my SIDs are stored
+const MY_SIDS = 'data/mysids.json';      // file, where my SIDs are stored
 const PROP_COLL='properties';
 const MAP_COLL='mapdata';
 
