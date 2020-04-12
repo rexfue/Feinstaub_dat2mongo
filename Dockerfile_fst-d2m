@@ -1,4 +1,4 @@
-FROM node:9-alpine
+FROM node:alpine
 
 ADD package_d2m.json /tmp/package.json
 RUN cd /tmp && npm install
@@ -7,11 +7,13 @@ RUN mkdir /opt/app/data
 WORKDIR /opt/app
 ADD dat2mongo.js /opt/app/
 ADD crontab.tmp /opt/app
+ADD runscript.sh /opt/app
+RUN mkdir /var/log/d2m
 
 RUN crontab crontab.tmp
 
 RUN touch cmds.sh \
-	&& echo 'crond -f' >cmds.sh
+	&& echo 'crond && ./runscript.sh' >cmds.sh
 
 CMD sh ./cmds.sh
 

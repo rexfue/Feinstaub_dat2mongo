@@ -40,7 +40,7 @@ let MONGOBASE =  process.env.MONGOBASE;
 if (MONGOHOST === undefined) { MONGOHOST = 'localhost';}
 if (MONGOPORT === undefined) { MONGOPORT =  27017; }
 if (MONGOAUTH === undefined) { MONGOAUTH =  'false'; }
-if (MONGOBASE === undefined) { MONGOBASE =  'Feinstaubi_A'; }
+if (MONGOBASE === undefined) { MONGOBASE =  'allsensors'; }
 
 let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT;  	// URL to mongo database
 if (MONGOAUTH == 'true') {
@@ -74,22 +74,25 @@ const defaultAddress = {
 
 console.log("\n\rStart: ", start.format("YYYY-MM-DD HH:mm"));
 
+/*
 // Check, if another instance is still running
+
 // if after 3 attempts the checkfile is stilll there, run anyway !!
 let checkFile = "data/checkfile";
 let data = {};
 if (fs.existsSync(checkFile)) {
     data = readDatafromFile(checkFile);
-    if (data.count < 2) {
-        data.count++;
+    if (data.count > 0) {
+        data.count--;
         saveDatatoFile(checkFile, JSON.stringify(data));
         console.log("Exiting.. -  checkfile:",data.count,"\n");
-        process.exit(0);
+//        process.exit(0);
     }
 }
-data.count = 0;
+data.count = 5;
 saveDatatoFile(checkFile, JSON.stringify(data));
 console.log("Starting.. - checkfile:",data.count);
+*/
 
 // create reusable transporter object using the default SMTP transport
 let transporter = nodemailer.createTransport({
@@ -151,6 +154,9 @@ function doReadfromAPI(client) {
         request(API_URL, {timeout: 5000}, function (error, response, body) {
             let jsBody;
             console.log('error:', error); // Print the error if one occurred
+            if(error != null) {
+                console.log(error);
+            }
             console.log('statusCode at first try:', response && response.statusCode); // Print the response status code if a response was received
             end = moment();
             try {
@@ -248,10 +254,6 @@ async function constructDBaseEntries(client,body) {
             let x = true;                                           // set flag
             for (let n = 0; n < val.length; n++) {                  // for all values in this entry
                 if (date.isSame(val[n].datetime)) {                 // if the same datetime is aready entered
-                    delete entry.datetime;                          // delete it
-                    for (var k in entry) {                          // and enter the typ and value
-                        val[n][k] = entry[k];
-                    }
                     x = false;                                      // clear flag
                     break;
                 }
@@ -328,10 +330,11 @@ async function constructDBaseEntries(client,body) {
     await storeStatistics(gz,allcount);
     put2MQTT(gz, allcount);
     console.log("All thru!  Time needed: ", minsec(moment() - start));
-    console.log(moment());
+    console.log(moment().format('YYYY-MM-DD HH:mm'));
     client.close();
-    console.log("Unlinking checkfile");
-    fs.unlinkSync(checkFile);
+//    data.count = 5;
+//    saveDatatoFile(checkFile, JSON.stringify(data));
+//    console.log("checkfile:",data.count);
 }
 
 
@@ -360,8 +363,8 @@ async function doTheEntry(entries) {
                 try {
                     await dBase.createCollection(cname);        // create collection
                     // and set TTL Index to Environment TTL_INDEX or, if undefined, to 380 days
-                    let ttl_index = (process.env.TTL_INDEX != undefined) ?  parseInt(process.env.TTL_INDEX) : 32832000;
-                    await coll.createIndex({datetime: 1}, {expireAfterSeconds: ttl_index});
+                    let ttl_index = (process.env.TTL_INDEX != undefined) ?  parseInt(process.env.TTL_INDEX) : 2764800;
+                    await coll.createIndex({datetime: 1}, {expireAfterSeconds: ttl_index, unique:true});
                 } catch(err) {
                     console.log(err);
                 }
@@ -374,7 +377,7 @@ async function doTheEntry(entries) {
                         if(doc.name != item.properties.name) {  // if we hav a new sensor name
                             console.log("Sensor geändert:",doc.name,item.sid,"=>",item.properties.name);
                             await korr.updateOne({_id:item.sid},{$set: {name:item.properties.name}});  // update properties
-// KEINE AHNUNG WAS DAS SOLLTE
+// KEINE AHNUNG WAS DAS SOLLTE   DOCH: den neune Sensor auch im ANDEREN zugehörigfen dann ändern !!!!  TUT NOCH NICHT <<<<<<<<<<<<<<<<<<<<<<<<<<<
 //                             let other = doc.othersensors;       // get 'othersensor'
 //                             if (other[0].id != undefined) {
 //                                 let oid = other[0].id;
@@ -384,23 +387,25 @@ async function doTheEntry(entries) {
 //                             }
                         }
                     }
-                    inserted = await coll.insertMany(item.values);  // save new values in collection
+                    inserted = await coll.insertMany(item.values, {ordered:false});  // save new values in collection
                     icount += inserted.insertedCount;
                     let anz = item.values.length;
                     let ts = item.values[anz-1].datetime;
                     await korr.updateOne({_id:item.sid},{$set:{last_seen:ts}},{ upsert:true});
 
+                    // Build entry for mapdata
                     let toEnter = {};
                     toEnter.values = item.values[anz-1];
                     toEnter._id = item.sid;
                     toEnter.name = item.properties.name;
                     toEnter.location = item.properties.location[0].loc;
+                    toEnter.indoor = item.properties.location[0].indoor;
                     let updated = await mapcoll.updateOne({_id:item.sid},{$set: toEnter},{upsert:true});
 //                    console.log(updated);
                 }
                 catch (e) {
                     if(e.message.startsWith("E11000 duplicate")) {
-//                        console.log("Duplicate:",item.sid);
+                        console.log(`Duplicate: sid: ${item.sid}, datetime: ${showdatetime(item.values)}`);
                         dcount++;
 
                     } else {
@@ -415,6 +420,13 @@ async function doTheEntry(entries) {
     }
 }
 
+function showdatetime (arr) {
+    erg = "";
+    for (i=0; i< arr.length; i++) {
+        erg += arr[i].datetime + "   ";
+    }
+    return erg;
+}
 
 async function doMapEntry(entries) {
     let mapcoll = dBase.collection(MAP_COLL);
