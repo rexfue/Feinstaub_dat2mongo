@@ -1,14 +1,15 @@
 {
-  "name": "d2mongo",
-  "version": "2.1.3",
-  "date": "2019-10-01",
+  "name": "dat2mongo",
+  "version": "2.2.1",
+  "date": "2020-04-12",
   "description": "",
   "main": "dat2mongo.js",
   "directories": {
     "doc": "doc"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node dat2mongo.js >>/var/log/d2mongo.log 2>&1"
   },
   "repository": {
     "type": "git",
