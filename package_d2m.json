@@ -1,7 +1,7 @@
 {
   "name": "d2mongo",
-  "version": "2.2.1",
-  "date": "2020-04-12",
+  "version": "2.2.2",
+  "date": "2020-08-31",
   "description": "",
   "main": "dat2mongo.js",
   "directories": {

@@ -46,7 +46,9 @@ let MONGO_URL = 'mongodb://'+MONGOHOST+':'+MONGOPORT;  	// URL to mongo database
 if (MONGOAUTH == 'true') {
     MONGO_URL = 'mongodb://'+MONGOUSRP+'@' + MONGOHOST + ':' + MONGOPORT + '/?authSource=admin';          // URL to mongo database
 }
-const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
+//const API_URL = 'https://api.luftdaten.info/static/v1/data.json';	// URL to API on 'luftdaten.info'
+//  https://api.sensor.community/static/v1/data.json
+const API_URL = 'https://api.sensor.community/static/v1/data.json';	// URL to API on 'luftdaten.info'
 const API24_URL = 'https://api.luftdaten.info/static/v2/data.24h.json';	// URL to API on 'luftdaten.info'
 const SAVE_NAME = 'data/aktdata.json';  // filename for actual data
 const MY_SIDS = 'data/mysids.json';      // file, where my SIDs are stored
@@ -170,6 +172,9 @@ function doReadfromAPI(client) {
                 constructDBaseEntries(client, jsBody);
             } catch (err) {
                 console.log("Catch - 2");
+                if(response === 'undefined') {
+                    return;
+                }
                 request(API_URL, {timeout: 5000}, function (error, response, body) {
                     console.log('error:', error); // Print the error if one occurred
                     console.log('statusCode at second try:', response && response.statusCode); // Print the response status code if a response was received
@@ -499,10 +504,12 @@ function checkMySids(ms) {
     let body = "";
     let toAddr = 'rexfue@gmail.com';
     for(let i=0; i<ms.length; i++) {
-        if (--ms[i].cnt == 0) {
-            body += "Sensor " + ms[i].sid + " von " + ms[i].name + " sendet seit einer Stunde nicht mehr\n";
-            if(ms[i].name == 'felix') {
-                toAddr += ',felix.fuerst@gmail.com';
+        if(ms[i].cnt !== 0) {
+            if (--ms[i].cnt == 0) {
+                body += "Sensor " + ms[i].sid + " von " + ms[i].name + " sendet seit einer Stunde nicht mehr\n";
+                if (ms[i].name == 'felix') {
+                    toAddr += ',felix.fuerst@gmail.com';
+                }
             }
         }
     }
