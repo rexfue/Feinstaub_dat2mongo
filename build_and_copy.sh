@@ -12,28 +12,45 @@
 #   - first Version
 #
 
-# set -x
+set -x
 port=""
-name=fst-d2m
+orgName=fst-d2m
+name=fst-d2m1
 
-
-if [ $# -lt 1 ]
-  then
-    echo "Usage buildit_and_copy.sh target [port]"
+usage()
+{
+    echo "Usage build_and_copy.sh [-p port] [-n name] target"
     echo "   Build docker container $name and copy to target"
     echo "Params:"
     echo "   target: Where to copy the container to "
-    echo "   port:   ssh port if not 22 < use: '-p xxxx' > (optional)"
-    exit
-fi
+    echo "   -p port:   ssh port  (default 22)"
+    echo "   -n name:   new name for container (default: $orgName)"
+}
 
+while getopts n:p:h? o
+do
+  case "$o" in
+  n)  name="$OPTARG";;
+  p)  port="-p $OPTARG";;
+  h) usage; exit 0;;
+  *) usage; exit 1;;
+  esac
+done
+shift $((OPTIND-1))
 
- docker build -f Dockerfile_$name -t $name .
+while [ $# -gt 0 ]; do
+        if [[ -z "$target" ]]; then
+                target=$1
+                shift
+        else
+                echo "bad option $1"
+                # exit 1
+                shift
+        fi
+done
 
-if [ "$2" != "" ]
-then
-    port=$2
-fi
+docker build -f Dockerfile_$orgName -t $name .
+
 dat=`date +%Y%m%d%H%M`
-ssh $port $1 "docker tag $name $name:V_$dat"
-docker save $name | bzip2 | pv | ssh $port $1 'bunzip2 | docker load'
+ssh $port $target "docker tag $name $name:V_$dat"
+docker save $name | bzip2 | pv | ssh $port $target 'bunzip2 | docker load'
