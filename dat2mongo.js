@@ -253,7 +253,7 @@ async function constructDBaseEntries(client,body) {
                 entry[typ] = x;                                     // put typ and value into new entry
             }
             // if Noise-Senseo, add exp values to LAeq
-            if(sname == 'Laerm') {
+            if(sname.startsWith('DNMS')) {
                 entry.E10tel_eq = Math.pow(10,entry.noise_LAeq/10);
             }
             let x = true;                                           // set flag
