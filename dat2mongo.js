@@ -129,7 +129,7 @@ let mysid =
 saveDatatoFile(MY_SIDS,JSON.stringify(mysid));
 */
 
-MongoClient.connect(MONGO_URL, { useNewUrlParser: true , useUnifiedTopology: true },function(err,client) {
+MongoClient.connect(MONGO_URL, { useNewUrlParser: true, useUnifiedTopology: true },function(err,client) {
     if (err) {
         console.log(err);
         process.exit(-1);    
@@ -251,10 +251,10 @@ async function constructDBaseEntries(client,body) {
                     console.log(err);
                 }
                 entry[typ] = x;                                     // put typ and value into new entry
-            }
-            // if Noise-Senseo, add exp values to LAeq
-            if(sname.startsWith('DNMS')) {
-                entry.E10tel_eq = Math.pow(10,entry.noise_LAeq/10);
+                // if Noise-Senseor, add exp values to LAeq
+                if(typ == "noise_LAeq") {
+                    entry.E10tel_eq = Math.pow(10,entry.noise_LAeq/10);
+                }
             }
             let x = true;                                           // set flag
             for (let n = 0; n < val.length; n++) {                  // for all values in this entry
