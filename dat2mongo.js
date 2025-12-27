@@ -102,8 +102,8 @@ let transporter = nodemailer.createTransport({
     port: 587,
     secure: false, // true for 465, false for other ports
     auth: {
-        user: 'rxf@fuerst-stuttgart.de', // generated ethereal user
-        pass: 'tibTop-xopqar-1qyrqe'  // generated ethereal password
+        user: 'user', // generated ethereal user
+        pass: 'passwd'  // generated ethereal password
     }
 });
 
