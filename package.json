@@ -19,11 +19,10 @@
   "license": "ISC",
   "dependencies": {
     "jquery": "^3.4.1",
-    "mathjs": "^5.10.3",
-    "moment": "^2.24.0",
-    "mongodb": "^3.6.6",
-    "nodemailer": "^4.7.0",
-    "request": "^2.88.0",
+    "mathjs": "^7.5.1",
+    "moment": "^2.29.4",
+    "mongodb": "^3.7.4",
+    "nodemailer": "^9.0.3",
     "saslprep": "^1.0.3"
   }
 }

@@ -22,11 +22,28 @@
 
 const LIVE=true;
 
-const request = require('request');
 const moment = require('moment');
 const MongoClient = require('mongodb').MongoClient;
 const fs = require('fs');
 const nodemailer = require('nodemailer');
+
+// Ersatz fuer das deprecated 'request'-Paket (kein Security-Fix mehr verfuegbar).
+// Nutzt das in Node eingebaute fetch und bildet das gewohnte (error, response, body)-
+// Callback-Interface nach, damit der bestehende Code unveraendert bleiben kann.
+function request(url, opts, callback) {
+    const timeout = (opts && opts.timeout) || 5000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    fetch(url, { signal: controller.signal })
+        .then(res => res.text().then(body => {
+            clearTimeout(timer);
+            callback(null, { statusCode: res.status }, body);
+        }))
+        .catch(err => {
+            clearTimeout(timer);
+            callback(err, undefined, undefined);
+        });
+}
 
 const ACTVE_CNT=12;                     // 12 * 5min => 1 h for activity check
 

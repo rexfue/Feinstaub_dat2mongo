@@ -2,4 +2,5 @@
 /mongodata/
 DS*
 /.idea/
+/node_modules/
 
