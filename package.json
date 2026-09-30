@@ -20,9 +20,9 @@
   "dependencies": {
     "jquery": "^3.4.1",
     "mathjs": "^7.5.1",
-    "moment": "^2.29.4",
+    "moment": "^2.31.0",
     "mongodb": "^3.7.4",
-    "nodemailer": "^9.1.1",
+    "nodemailer": "^10.0.13",
     "saslprep": "^1.0.3"
   }
 }
